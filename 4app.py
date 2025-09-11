@@ -2,17 +2,74 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 import os
-import plotly.express as px
 
 # ---------- CSS Styling ----------
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] { background-color: #E6F2FF; }
-h1,h2,h3 { font-family: 'Lato', sans-serif; color: #003366; }
-.card { background-color: white; padding:20px; border-radius:15px; box-shadow:2px 2px 12px rgba(0,0,0,0.1); margin-bottom:20px; transition: transform 0.3s; }
-.card:hover { transform: scale(1.03); }
-button, .stButton>button { background: linear-gradient(90deg,#0072E3,#00BFFF); color:white; padding:10px 20px; border-radius:10px; border:none; font-weight:bold; }
-button:hover, .stButton>button:hover { background: linear-gradient(90deg,#005BB5,#0095CC); }
+/* Full-page gradient background */
+[data-testid="stAppViewContainer"] { 
+    background: linear-gradient(135deg, #e0f7fa 0%, #80deea 100%);
+    color: #003366;
+    font-family: 'Lato', sans-serif;
+}
+
+/* Hero section */
+.hero {
+    background-image: url('https://via.placeholder.com/1200x400?text=Thrive+Mental+Wellness');
+    background-size: cover;
+    background-position: center;
+    padding: 80px 20px;
+    border-radius: 15px;
+    color: white;
+    text-align: center;
+}
+
+/* Cards */
+.card { 
+    background-color: white; 
+    padding:20px; 
+    border-radius:15px; 
+    box-shadow:2px 2px 15px rgba(0,0,0,0.15); 
+    margin-bottom:20px; 
+    transition: transform 0.3s; 
+}
+.card:hover { 
+    transform: scale(1.03); 
+}
+
+/* Buttons */
+button, .stButton>button { 
+    background: linear-gradient(90deg,#0072E3,#00BFFF); 
+    color:white; 
+    padding:10px 20px; 
+    border-radius:12px; 
+    border:none; 
+    font-weight:bold; 
+    transition: 0.3s; 
+}
+button:hover, .stButton>button:hover { 
+    background: linear-gradient(90deg,#005BB5,#0095CC); 
+}
+
+/* Inputs */
+.stTextInput>div>div>input, .stTextArea>div>div>textarea, .stSelectbox>div>div>div>select {
+    border-radius:10px; 
+    border:1px solid #0072E3; 
+    padding:5px;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] { 
+    background: #b2ebf2; 
+}
+
+/* Footer */
+.footer {
+    text-align:center;
+    padding:20px;
+    font-size:14px;
+    color:#003366;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,8 +118,26 @@ def assign_staff():
 
 # ---------- Pages ----------
 def home_page():
-    st.markdown('<div class="card"><h1>Welcome to Thrive Mental Wellness LLC</h1><p>Your mental health is our priority.</p></div>', unsafe_allow_html=True)
-    st.markdown('<div class="card"><h2>Services</h2><ul><li>Medication Management</li><li>Psychotherapy</li></ul></div>', unsafe_allow_html=True)
+    # Hero section
+    st.markdown(
+        """
+        <div class="hero">
+            <h1>Welcome to Thrive Mental Wellness LLC</h1>
+            <p>Your mental health is our priority</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Services in two columns
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown('<div class="card"><h2>Medication Management</h2><p>Personalized care using medications to manage mental health conditions.</p></div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown('<div class="card"><h2>Psychotherapy</h2><p>Professional therapy sessions to support emotional well-being.</p></div>', unsafe_allow_html=True)
+    
+    # Call to Action
+    st.markdown('<div class="card"><h2>Book Your Appointment</h2><p>Click the Book Appointment tab in the sidebar to schedule your session.</p></div>', unsafe_allow_html=True)
 
 def staff_page():
     st.subheader("Staff Profiles")
@@ -91,51 +166,19 @@ def book_appointment():
                         "SubmittedAt":submitted_at,"Status":"Pending","AssignedTo":assigned_staff}, ignore_index=True)
         save_csv(df, "appointments.csv")
         st.success(f"Appointment submitted! Assigned to: {assigned_staff}")
-        st.info("Email notifications are placeholders and will be added later.")
         st.info("Telehealth link placeholder: https://example.com/telehealth")
 
-# ---------- Dashboard ----------
 def dashboard():
     st.subheader(f"{'Admin' if st.session_state.role=='Admin' else 'Staff'} Dashboard")
     df = load_csv("appointments.csv", ["Name","Email","Phone","Service","Date","Notes","SubmittedAt","Status","AssignedTo"])
     if st.session_state.role=="Staff":
         df = df[df["AssignedTo"]==st.session_state.user_email]
     
-    st.markdown("### Appointment Table / Calendar")
-    df["Date"] = pd.to_datetime(df["Date"])
-    
-    # Try AgGrid, fallback to simple table
-    try:
-        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-        df["StatusColor"] = df["Status"].apply(lambda x: 'lightgreen' if x=="Completed" else 'yellow')
-        gb = GridOptionsBuilder.from_dataframe(df)
-        gb.configure_selection(selection_mode="single", use_checkbox=True)
-        gb.configure_column("Status", cellStyle=lambda params: {'backgroundColor': 'lightgreen' if params.value=="Completed" else 'yellow'})
-        grid_options = gb.build()
-        grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
-        selected = grid_response["selected_rows"]
-    except ModuleNotFoundError:
-        st.warning("Optional module 'st-aggrid' not installed. Displaying simple table.")
-        st.dataframe(df)
-        selected = []
+    # Appointment Table
+    st.markdown("### Appointment Table")
+    st.dataframe(df)
 
-    if selected:
-        st.markdown("### Selected Appointment Details")
-        sel = selected[0]
-        st.write(f"**Patient:** {sel['Name']}")
-        st.write(f"**Service:** {sel['Service']}")
-        st.write(f"**Date:** {sel['Date']}")
-        st.write(f"**Notes:** {sel['Notes']}")
-        st.write(f"**Assigned To:** {sel['AssignedTo']}")
-        status = sel['Status']
-        new_status = st.selectbox("Update Status", ["Pending","Completed"], index=0 if status=="Pending" else 1)
-        if st.button("Update Status"):
-            idx = df.index[df["Name"]==sel["Name"]][0]
-            df.at[idx, "Status"] = new_status
-            save_csv(df, "appointments.csv")
-            st.success("Status updated!")
-            st.experimental_rerun()
-    
+    # Patient Notes
     st.markdown("### Record Patient Information")
     patient_name = st.text_input("Patient Name")
     patient_notes = st.text_area("Notes / Illness / Treatment")
@@ -149,6 +192,7 @@ def dashboard():
             save_csv(df_all, "appointments.csv")
             st.success("Patient information recorded!")
 
+    # Profile Photo Upload
     st.markdown("### Upload Profile Photo")
     uploaded_file = st.file_uploader("Upload photo", type=["png","jpg","jpeg"])
     if uploaded_file is not None:
@@ -156,18 +200,6 @@ def dashboard():
         staff_df = staff_df.append({"Name":st.session_state.user_email,"Role":st.session_state.role,"Bio":"","Photo":uploaded_file.getvalue()}, ignore_index=True)
         save_csv(staff_df, "staff_profiles.csv")
         st.success("Profile photo uploaded!")
-    
-    # ---------- Analytics Charts ----------
-    if st.session_state.role=="Admin":
-        st.markdown("### Analytics Dashboard")
-        df_all = load_csv("appointments.csv", ["Name","Email","Phone","Service","Date","Notes","SubmittedAt","Status","AssignedTo"])
-        if not df_all.empty:
-            service_chart = px.bar(df_all["Service"].value_counts().reset_index(), x='index', y='Service', labels={'index':'Service','Service':'Count'}, title="Appointments per Service")
-            st.plotly_chart(service_chart)
-            df_all["Date"] = pd.to_datetime(df_all["Date"])
-            daily_chart = px.line(df_all.groupby("Date").size().reset_index(name="Appointments"), x="Date", y="Appointments", title="Appointments Over Time")
-            st.plotly_chart(daily_chart)
-        st.download_button("Download All Appointments CSV", df_all.to_csv(index=False), file_name="appointments.csv")
 
 # ---------- Main App ----------
 if not st.session_state.logged_in:
@@ -201,3 +233,6 @@ else:
         book_appointment()
     elif page == "Dashboard":
         dashboard()
+
+# Footer
+st.markdown('<div class="footer">© 2025 Thrive Mental Wellness LLC | Contact: info@thrivewellness.com | Follow us on social media</div>', unsafe_allow_html=True)
