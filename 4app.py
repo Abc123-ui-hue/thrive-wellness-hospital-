@@ -4,25 +4,24 @@ from datetime import datetime
 import os
 from PIL import Image
 import requests
-from io import BytesIO
 
 # ---------------- Database Setup ----------------
 conn = sqlite3.connect("hospital.db", check_same_thread=False)
 c = conn.cursor()
 
-# Users Table
+# Ensure users table exists
 c.execute("""CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    email TEXT UNIQUE,
-    password TEXT,
-    role TEXT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL,
     bio TEXT,
     phone TEXT,
     avatar_url TEXT
 )""")
 
-# Patient Reports Table
+# Ensure reports table exists
 c.execute("""CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_name TEXT,
@@ -33,7 +32,7 @@ c.execute("""CREATE TABLE IF NOT EXISTS reports (
     created_at TEXT
 )""")
 
-# Appointments Table
+# Ensure appointments table exists
 c.execute("""CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_name TEXT,
@@ -45,7 +44,6 @@ c.execute("""CREATE TABLE IF NOT EXISTS appointments (
     status TEXT,
     created_by TEXT
 )""")
-
 conn.commit()
 
 # ---------------- Helper Functions ----------------
@@ -63,13 +61,19 @@ def get_user(email):
     return c.fetchone()
 
 def register_user(name, email, password, role):
+    if not name or not email or not password or not role:
+        st.error("All fields are required!")
+        return False
     avatar_url = get_avatar_url()
     try:
-        c.execute("INSERT INTO users (name,email,password,role,avatar_url) VALUES (?,?,?,?,?)",
-                  (name, email, hash_password(password), role, avatar_url))
+        c.execute(
+            "INSERT INTO users (name,email,password,role,avatar_url) VALUES (?,?,?,?,?)",
+            (name, email, hash_password(password), role, avatar_url)
+        )
         conn.commit()
         return True
     except sqlite3.IntegrityError:
+        st.error("Email already exists!")
         return False
 
 def update_profile(user_id, name, bio, phone, avatar_url):
@@ -100,7 +104,7 @@ def get_appointments():
 # ---------------- Streamlit Page Config ----------------
 st.set_page_config(page_title="Thrive Wellness Hospital Portal", layout="wide")
 
-# Full-page gradient background
+# Background and styling
 st.markdown("""
 <style>
 .stApp {background: linear-gradient(to right, #a1c4fd, #c2e9fb); min-height:100vh;}
@@ -137,16 +141,12 @@ def register():
     if st.button("Register", key="register_btn"):
         if register_user(name, email, password, role):
             st.success("Registration successful! You can login now.")
-        else:
-            st.error("Email already exists.")
 
 # ---------------- Public Pages ----------------
 def home_page():
     st.header("Welcome to Thrive Wellness Hospital")
     st.subheader("Your mental health matters")
-    # Display an avatar
-    avatar_url = get_avatar_url()
-    st.image(avatar_url, width=150)
+    st.image(get_avatar_url(), width=150)  # Avatar on welcome page
     st.write("Services: Medication Management, Psychotherapy (Individual, Group, Family)")
     st.button("Book Appointment")
     st.button("Contact Us")
@@ -162,7 +162,7 @@ def about_us():
 
 def services_page():
     st.header("Services")
-    st.write("Medication Management, Psychotherapy (Individual, Group, Family), Telehealth")
+    st.write("Medication Management, Psychotherapy, Telehealth")
 
 def contact_page():
     st.header("Contact Us")
@@ -175,12 +175,9 @@ def contact_page():
 # ----------------- Main App -----------------
 if not st.session_state.logged_in:
     tabs = st.tabs(["Home", "Login", "Register"])
-    with tabs[0]:
-        home_page()
-    with tabs[1]:
-        login()
-    with tabs[2]:
-        register()
+    with tabs[0]: home_page()
+    with tabs[1]: login()
+    with tabs[2]: register()
 else:
     user = st.session_state.user
     st.sidebar.image(user[7], width=100)
@@ -204,14 +201,12 @@ else:
         phone = st.text_input("Phone", value=user[6] if user[6] else "", key="profile_phone")
         avatar_file = st.file_uploader("Upload Avatar", type=["png","jpg","jpeg"], key="profile_avatar")
         avatar_url = user[7]
-
         if avatar_file:
             avatar_path = f"avatars/{user[1].replace(' ','_')}.png"
             os.makedirs("avatars", exist_ok=True)
             with open(avatar_path, "wb") as f:
                 f.write(avatar_file.getbuffer())
             avatar_url = avatar_path
-
         if st.button("Update Profile", key="profile_update_btn"):
             update_profile(user[0], name, bio, phone, avatar_url)
             st.success("Profile updated! Reload page.")
@@ -268,4 +263,3 @@ else:
         if st.button("Book", key="book_btn"):
             create_appointment(patient_name, service, date, time, provider, telehealth, user[1])
             st.success("Appointment booked successfully! Confirmation sent (simulated)")
-
