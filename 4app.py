@@ -243,7 +243,8 @@ if not st.session_state.logged_in:
                 st.session_state.role = role
                 st.session_state.user_email = email
                 st.success(f"Logged in as {role}")
-                st.experimental_rerun()
+                st.rerun()
+
             else:
                 st.error("Invalid credentials or not an official hospital email")
     elif tab == "Register":
