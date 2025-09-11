@@ -115,7 +115,7 @@ def logout_user():
     st.session_state.logged_in = False
     st.session_state.role = None
     st.session_state.user_email = None
-    st.experimental_rerun()
+    st.rerun()
 
 # ---------- Registration ----------
 def register_user():
