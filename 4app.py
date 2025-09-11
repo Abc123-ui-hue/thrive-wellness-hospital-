@@ -2,14 +2,13 @@ import streamlit as st
 import sqlite3
 from datetime import datetime
 import os
-from PIL import Image
-import requests
 
 # ---------------- Database Setup ----------------
-conn = sqlite3.connect("hospital.db", check_same_thread=False)
+DB_FILE = "hospital.db"
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 c = conn.cursor()
 
-# Ensure users table exists
+# Users Table
 c.execute("""CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -21,7 +20,7 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT
 )""")
 
-# Ensure reports table exists
+# Reports Table
 c.execute("""CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_name TEXT,
@@ -32,7 +31,7 @@ c.execute("""CREATE TABLE IF NOT EXISTS reports (
     created_at TEXT
 )""")
 
-# Ensure appointments table exists
+# Appointments Table
 c.execute("""CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_name TEXT,
@@ -54,7 +53,7 @@ def check_password(password, hashed):
     return hash_password(password) == hashed
 
 def get_avatar_url():
-    return f"https://thispersondoesnotexist.com/image"
+    return "https://thispersondoesnotexist.com/image"
 
 def get_user(email):
     c.execute("SELECT * FROM users WHERE email=?", (email,))
@@ -74,6 +73,9 @@ def register_user(name, email, password, role):
         return True
     except sqlite3.IntegrityError:
         st.error("Email already exists!")
+        return False
+    except sqlite3.OperationalError as e:
+        st.error(f"Database error: {e}")
         return False
 
 def update_profile(user_id, name, bio, phone, avatar_url):
@@ -101,10 +103,8 @@ def get_appointments():
     c.execute("SELECT * FROM appointments ORDER BY date DESC, time DESC")
     return c.fetchall()
 
-# ---------------- Streamlit Page Config ----------------
+# ---------------- Streamlit Config ----------------
 st.set_page_config(page_title="Thrive Wellness Hospital Portal", layout="wide")
-
-# Background and styling
 st.markdown("""
 <style>
 .stApp {background: linear-gradient(to right, #a1c4fd, #c2e9fb); min-height:100vh;}
@@ -135,9 +135,9 @@ def login():
 def register():
     st.subheader("Register")
     name = st.text_input("Full Name", key="register_name")
-    email = st.text_input("Register Email", key="register_email")
-    password = st.text_input("Register Password", type="password", key="register_password")
-    role = st.selectbox("Role", ["Patient", "Staff", "Admin"], key="register_role")
+    email = st.text_input("Email", key="register_email")
+    password = st.text_input("Password", type="password", key="register_password")
+    role = st.selectbox("Role", ["Patient","Staff","Admin"], key="register_role")
     if st.button("Register", key="register_btn"):
         if register_user(name, email, password, role):
             st.success("Registration successful! You can login now.")
@@ -146,7 +146,7 @@ def register():
 def home_page():
     st.header("Welcome to Thrive Wellness Hospital")
     st.subheader("Your mental health matters")
-    st.image(get_avatar_url(), width=150)  # Avatar on welcome page
+    st.image(get_avatar_url(), width=150)
     st.write("Services: Medication Management, Psychotherapy (Individual, Group, Family)")
     st.button("Book Appointment")
     st.button("Contact Us")
@@ -154,25 +154,7 @@ def home_page():
     st.markdown("**Testimonials / Success Stories**: Patient A, Patient B")
     st.markdown("Follow us on [Facebook](#) | [Twitter](#) | [Instagram](#)")
 
-def about_us():
-    st.header("About Us")
-    st.write("Our mission: Provide compassionate mental health care")
-    st.write("Clinic Certifications: XYZ, ABC")
-    st.write("Staff bios, photos, awards...")
-
-def services_page():
-    st.header("Services")
-    st.write("Medication Management, Psychotherapy, Telehealth")
-
-def contact_page():
-    st.header("Contact Us")
-    st.write("Address: 123 Wellness St, Nairobi")
-    st.write("Phone: +254 700 000000")
-    st.write("Email: contact@thrivehospital.com")
-    st.text_area("Send us a message", key="contact_message")
-    st.button("Submit", key="contact_submit")
-
-# ----------------- Main App -----------------
+# ---------------- Main App -----------------
 if not st.session_state.logged_in:
     tabs = st.tabs(["Home", "Login", "Register"])
     with tabs[0]: home_page()
@@ -186,7 +168,7 @@ else:
     st.sidebar.write(f"Bio: {user[5]}")
     st.sidebar.write(f"Phone: {user[6]}")
 
-    menu_items = ["Dashboard", "Profile", "Patient Reports", "Appointments", "Book Appointment", "Logout"]
+    menu_items = ["Dashboard","Profile","Patient Reports","Appointments","Book Appointment","Logout"]
     page = st.sidebar.selectbox("Menu", menu_items)
 
     if page == "Logout":
@@ -221,11 +203,10 @@ else:
         col1.metric("Total Users", total_users)
         col2.metric("Total Reports", total_reports)
         col3.metric("Total Appointments", total_appointments)
-        st.write("Quick overview of system stats")
 
     elif page == "Patient Reports":
         st.header("Patient Reports")
-        if user[4] in ["Admin", "Staff"]:
+        if user[4] in ["Admin","Staff"]:
             st.subheader("Add Report")
             patient_name = st.text_input("Patient Name", key="report_patient_name")
             treatment = st.text_input("Treatment", key="report_treatment")
@@ -238,10 +219,7 @@ else:
         for r in reports:
             col1, col2 = st.columns([1,5])
             with col1:
-                if os.path.exists(r[5]):
-                    st.image(r[5], width=50)
-                else:
-                    st.image(r[5], width=50)
+                st.image(r[5], width=50)
             with col2:
                 st.markdown(f"**Patient:** {r[1]}  \n**Treatment:** {r[2]}  \n**Solution:** {r[3]}  \n**By:** {r[4]}  \n**At:** {r[6]}")
             st.markdown("---")
