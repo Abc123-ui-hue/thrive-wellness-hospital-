@@ -7,7 +7,7 @@ from datetime import datetime
 
 # ---------------- Email Config ----------------
 EMAIL_SENDER = "muthwiimeshack@gmail.com"
-EMAIL_PASSWORD = "rkubtmzydtgymkrf"  # Gmail App Password
+EMAIL_PASSWORD = "rkubtmzydtgymkrf"
 EMAIL_RECEIVER = "muthwiimeshack@gmail.com"
 
 # ---------------- Initialize session state ----------------
@@ -20,7 +20,7 @@ if "submissions" not in st.session_state:
 st.sidebar.title("Thrive Mental Wellness")
 page = st.sidebar.radio("Navigate", ["Home", "Services", "Staff", "Book Appointment", "Admin", "Legal"])
 
-# ---------------- Custom CSS & Animations ----------------
+# ---------------- Custom CSS ----------------
 st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Roboto&family=Lato&display=swap" rel="stylesheet">
 <style>
@@ -29,7 +29,6 @@ h1,h2,h3,h4 { font-family: 'Lato', sans-serif; }
 .hero { background-color:#a0d8f1; padding:50px; border-radius:10px; text-align:center; color:#003366; animation: fadeIn 2s; }
 .card { background-color:white; padding:20px; border-radius:10px; box-shadow:2px 2px 12px rgba(0,0,0,0.1); margin-bottom:20px; transition: transform 0.3s;}
 .card:hover { transform: scale(1.03); }
-.card img:hover { transform: scale(1.05); box-shadow: 4px 4px 20px rgba(0,0,0,0.2);}
 button:hover { background-color: #009e8f; transition: 0.3s; }
 a.button:hover { transform: scale(1.05); transition: 0.3s;}
 @keyframes fadeIn { 0% {opacity: 0;} 100% {opacity: 1;} }
@@ -38,7 +37,7 @@ a.button:hover { transform: scale(1.05); transition: 0.3s;}
 
 # ---------------- HOME PAGE ----------------
 if page == "Home":
-    st.image("images/thrive_logo.png", width=200)
+    st.image("https://via.placeholder.com/200x100.png?text=Thrive+Logo", width=200)
     st.markdown("""
     <div class='hero'>
         <h1>🧠 Thrive Mental Wellness LLC</h1>
@@ -87,7 +86,7 @@ elif page == "Staff":
         else:
             st.error("Please upload a photo or take a photo before saving")
 
-# ---------------- APPOINTMENT BOOKING PAGE ----------------
+# ---------------- BOOK APPOINTMENT ----------------
 elif page == "Book Appointment":
     st.title("📅 Book an Appointment")
     st.markdown("<div id='appointment'></div>", unsafe_allow_html=True)
@@ -101,29 +100,28 @@ elif page == "Book Appointment":
         date_time = st.date_input("Preferred Date")
         submit = st.form_submit_button("Submit Appointment")
     
-if submit:
-    submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    st.session_state.submissions.loc[len(st.session_state.submissions)] = [name, email, phone, service, date_time, submitted_at]
-    st.success("✅ Appointment submitted successfully!")
-    try:
-        msg_content = f"""New Appointment Submission
+    if submit:
+        submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state.submissions.loc[len(st.session_state.submissions)] = [name, email, phone, service, date_time, submitted_at]
+        st.success("✅ Appointment submitted successfully!")
+        try:
+            msg_content = f"""New Appointment Submission
 Name: {name}
 Email: {email}
 Phone: {phone}
 Service: {service}
 Date: {date_time}
 Submitted At: {submitted_at}"""
-        msg = MIMEText(msg_content)
-        msg["Subject"] = "New Appointment Submission - Thrive Mental Wellness"
-        msg["From"] = EMAIL_SENDER
-        msg["To"] = EMAIL_RECEIVER
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            server.send_message(msg)
-        st.info("📧 Notification sent to clinic email.")
-    except Exception as e:
-        st.error(f"❌ Email failed: {e}")
-
+            msg = MIMEText(msg_content)
+            msg["Subject"] = "New Appointment Submission - Thrive Mental Wellness"
+            msg["From"] = EMAIL_SENDER
+            msg["To"] = EMAIL_RECEIVER
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+                server.send_message(msg)
+            st.info("📧 Notification sent to clinic email.")
+        except Exception as e:
+            st.error(f"❌ Email failed: {e}")
 
 # ---------------- ADMIN PAGE ----------------
 elif page == "Admin":
