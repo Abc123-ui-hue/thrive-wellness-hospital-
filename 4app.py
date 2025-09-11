@@ -433,7 +433,7 @@ def main():
         st.sidebar.markdown(f"**Logged in as:** {st.session_state.user_email}")
         if st.sidebar.button("Logout"):
             logout_user()
-            st.experimental_rerun()  # safe here to request rerun right after setting trigger
+            st.rerun()     # safe here to request rerun right after setting trigger
 
         page = st.sidebar.radio("Navigation", ["Home", "Services", "Staff", "Book Appointment", "Dashboard"], index=0)
         if page == "Home":
