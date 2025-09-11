@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 import os
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 import plotly.express as px
 
 # ---------- CSS Styling ----------
@@ -102,17 +101,24 @@ def dashboard():
     if st.session_state.role=="Staff":
         df = df[df["AssignedTo"]==st.session_state.user_email]
     
-    st.markdown("### Interactive Appointment Table")
+    st.markdown("### Appointment Table / Calendar")
     df["Date"] = pd.to_datetime(df["Date"])
-    df["StatusColor"] = df["Status"].apply(lambda x: 'lightgreen' if x=="Completed" else 'yellow')
     
-    gb = GridOptionsBuilder.from_dataframe(df)
-    gb.configure_selection(selection_mode="single", use_checkbox=True)
-    gb.configure_column("Status", cellStyle=lambda params: {'backgroundColor': 'lightgreen' if params.value=="Completed" else 'yellow'})
-    grid_options = gb.build()
-    grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
-    
-    selected = grid_response["selected_rows"]
+    # Try AgGrid, fallback to simple table
+    try:
+        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+        df["StatusColor"] = df["Status"].apply(lambda x: 'lightgreen' if x=="Completed" else 'yellow')
+        gb = GridOptionsBuilder.from_dataframe(df)
+        gb.configure_selection(selection_mode="single", use_checkbox=True)
+        gb.configure_column("Status", cellStyle=lambda params: {'backgroundColor': 'lightgreen' if params.value=="Completed" else 'yellow'})
+        grid_options = gb.build()
+        grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
+        selected = grid_response["selected_rows"]
+    except ModuleNotFoundError:
+        st.warning("Optional module 'st-aggrid' not installed. Displaying simple table.")
+        st.dataframe(df)
+        selected = []
+
     if selected:
         st.markdown("### Selected Appointment Details")
         sel = selected[0]
