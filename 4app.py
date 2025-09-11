@@ -116,9 +116,24 @@ def assign_staff():
         return assigned
     return ""
 
+# ---------- Registration ----------
+def register_user():
+    st.subheader("Register New User")
+    new_email = st.text_input("Email", key="reg_email")
+    new_password = st.text_input("Password", type="password", key="reg_password")
+    role = st.selectbox("Role", ["Admin", "Staff"], key="reg_role")
+    
+    if st.button("Register", key="reg_btn"):
+        if new_email.strip() == "" or new_password.strip() == "":
+            st.error("Please provide both email and password")
+        elif new_email in users_db:
+            st.error("User already exists")
+        else:
+            users_db[new_email] = {"password": new_password, "role": role}
+            st.success(f"{role} registered successfully! You can now log in.")
+
 # ---------- Pages ----------
 def home_page():
-    # Hero section
     st.markdown(
         """
         <div class="hero">
@@ -203,20 +218,25 @@ def dashboard():
 
 # ---------- Main App ----------
 if not st.session_state.logged_in:
-    st.title("Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    st.title("Welcome to Thrive Mental Wellness Portal")
     
-    if st.button("Login"):
-        role = authenticate_user(email, password)
-        if role:
-            st.session_state.logged_in = True
-            st.session_state.role = role
-            st.session_state.user_email = email
-            st.success(f"Logged in as {role}")
-            st.experimental_rerun()
-        else:
-            st.error("Invalid credentials")
+    tab = st.radio("Choose Action", ["Login", "Register"], horizontal=True)
+    
+    if tab == "Login":
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_pass")
+        if st.button("Login"):
+            role = authenticate_user(email, password)
+            if role:
+                st.session_state.logged_in = True
+                st.session_state.role = role
+                st.session_state.user_email = email
+                st.success(f"Logged in as {role}")
+                st.experimental_rerun()
+            else:
+                st.error("Invalid credentials")
+    elif tab == "Register":
+        register_user()
 else:
     st.sidebar.button("Logout", on_click=logout_user)
     st.sidebar.title(f"Logged in as: {st.session_state.role}")
