@@ -1,12 +1,12 @@
 import streamlit as st
-from datetime import datetime
 import pandas as pd
 import os
+from datetime import datetime
 
 # ---------- CSS Styling ----------
 st.markdown("""
 <style>
-/* Full-page gradient background */
+/* Full-page background */
 [data-testid="stAppViewContainer"] { 
     background: linear-gradient(135deg, #e0f7fa 0%, #80deea 100%);
     color: #003366;
@@ -24,7 +24,7 @@ st.markdown("""
     text-align: center;
 }
 
-/* Cards */
+/* Cards for sections */
 .card { 
     background-color: white; 
     padding:20px; 
@@ -33,9 +33,7 @@ st.markdown("""
     margin-bottom:20px; 
     transition: transform 0.3s; 
 }
-.card:hover { 
-    transform: scale(1.03); 
-}
+.card:hover { transform: scale(1.03); }
 
 /* Buttons */
 button, .stButton>button { 
@@ -51,24 +49,24 @@ button:hover, .stButton>button:hover {
     background: linear-gradient(90deg,#005BB5,#0095CC); 
 }
 
-/* Inputs */
-.stTextInput>div>div>input, .stTextArea>div>div>textarea, .stSelectbox>div>div>div>select {
+/* Input fields styling */
+.stTextInput>div>div>input, 
+.stTextArea>div>div>textarea, 
+.stSelectbox>div>div>div>select {
     border-radius:10px; 
     border:1px solid #0072E3; 
     padding:5px;
 }
 
 /* Sidebar */
-[data-testid="stSidebar"] { 
-    background: #b2ebf2; 
-}
+[data-testid="stSidebar"] { background: #b2ebf2; }
 
 /* Footer */
-.footer {
-    text-align:center;
-    padding:20px;
-    font-size:14px;
-    color:#003366;
+.footer { 
+    text-align:center; 
+    padding:20px; 
+    font-size:14px; 
+    color:#003366; 
 }
 </style>
 """, unsafe_allow_html=True)
@@ -80,15 +78,35 @@ if "logged_in" not in st.session_state:
     st.session_state.user_email = None
     st.session_state.staff_index = 0
 
-# ---------- Dummy User Database ----------
-users_db = {
-    "admin@example.com": {"password": "admin123", "role": "Admin"},
-    "staff1@example.com": {"password": "staff123", "role": "Staff"},
-    "staff2@example.com": {"password": "staff123", "role": "Staff"}
-}
+# ---------- Users Database ----------
+def load_users():
+    pre_populated = [
+        {"Email":"admin@thrivewellness.com","Password":"Admin123!","Role":"Admin"},
+        {"Email":"staff1@thrivewellness.com","Password":"Staff123!","Role":"Staff"},
+        {"Email":"staff2@thrivewellness.com","Password":"Staff123!","Role":"Staff"}
+    ]
+    
+    if os.path.exists("users.csv"):
+        df = pd.read_csv("users.csv")
+    else:
+        df = pd.DataFrame(pre_populated)
+        df.to_csv("users.csv", index=False)
+    
+    return {row["Email"]: {"password": row["Password"], "role": row["Role"]} for idx, row in df.iterrows()}
 
-# ---------- Helper Functions ----------
+users_db = load_users()
+
+def save_user(email, password, role):
+    new_df = pd.DataFrame([{"Email": email, "Password": password, "Role": role}])
+    if os.path.exists("users.csv"):
+        new_df.to_csv("users.csv", mode='a', header=False, index=False)
+    else:
+        new_df.to_csv("users.csv", index=False)
+
+# ---------- Authentication ----------
 def authenticate_user(email, password):
+    if not email.endswith("@thrivewellness.com"):
+        return None
     if email in users_db and users_db[email]["password"] == password:
         return users_db[email]["role"]
     return None
@@ -99,6 +117,26 @@ def logout_user():
     st.session_state.user_email = None
     st.experimental_rerun()
 
+# ---------- Registration ----------
+def register_user():
+    st.subheader("Register New User (Official Email Only)")
+    new_email = st.text_input("Email", key="reg_email")
+    new_password = st.text_input("Password", type="password", key="reg_password")
+    role = st.selectbox("Role", ["Admin", "Staff"], key="reg_role")
+    
+    if st.button("Register", key="reg_btn"):
+        if not new_email.endswith("@thrivewellness.com"):
+            st.error("Please use your official hospital email")
+        elif new_email.strip() == "" or new_password.strip() == "":
+            st.error("Please provide both email and password")
+        elif new_email in users_db:
+            st.error("User already exists")
+        else:
+            users_db[new_email] = {"password": new_password, "role": role}
+            save_user(new_email, new_password, role)
+            st.success(f"{role} registered successfully! You can now log in.")
+
+# ---------- Helper Functions ----------
 def load_csv(filename, columns):
     if os.path.exists(filename):
         return pd.read_csv(filename)
@@ -116,42 +154,18 @@ def assign_staff():
         return assigned
     return ""
 
-# ---------- Registration ----------
-def register_user():
-    st.subheader("Register New User")
-    new_email = st.text_input("Email", key="reg_email")
-    new_password = st.text_input("Password", type="password", key="reg_password")
-    role = st.selectbox("Role", ["Admin", "Staff"], key="reg_role")
-    
-    if st.button("Register", key="reg_btn"):
-        if new_email.strip() == "" or new_password.strip() == "":
-            st.error("Please provide both email and password")
-        elif new_email in users_db:
-            st.error("User already exists")
-        else:
-            users_db[new_email] = {"password": new_password, "role": role}
-            st.success(f"{role} registered successfully! You can now log in.")
-
 # ---------- Pages ----------
 def home_page():
     st.markdown(
-        """
-        <div class="hero">
-            <h1>Welcome to Thrive Mental Wellness LLC</h1>
-            <p>Your mental health is our priority</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+        """<div class="hero"><h1>Welcome to Thrive Mental Wellness LLC</h1>
+        <p>Your mental health is our priority</p></div>""", unsafe_allow_html=True)
     
-    # Services in two columns
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="card"><h2>Medication Management</h2><p>Personalized care using medications to manage mental health conditions.</p></div>', unsafe_allow_html=True)
     with col2:
         st.markdown('<div class="card"><h2>Psychotherapy</h2><p>Professional therapy sessions to support emotional well-being.</p></div>', unsafe_allow_html=True)
     
-    # Call to Action
     st.markdown('<div class="card"><h2>Book Your Appointment</h2><p>Click the Book Appointment tab in the sidebar to schedule your session.</p></div>', unsafe_allow_html=True)
 
 def staff_page():
@@ -189,11 +203,9 @@ def dashboard():
     if st.session_state.role=="Staff":
         df = df[df["AssignedTo"]==st.session_state.user_email]
     
-    # Appointment Table
     st.markdown("### Appointment Table")
     st.dataframe(df)
 
-    # Patient Notes
     st.markdown("### Record Patient Information")
     patient_name = st.text_input("Patient Name")
     patient_notes = st.text_area("Notes / Illness / Treatment")
@@ -207,7 +219,6 @@ def dashboard():
             save_csv(df_all, "appointments.csv")
             st.success("Patient information recorded!")
 
-    # Profile Photo Upload
     st.markdown("### Upload Profile Photo")
     uploaded_file = st.file_uploader("Upload photo", type=["png","jpg","jpeg"])
     if uploaded_file is not None:
@@ -234,7 +245,7 @@ if not st.session_state.logged_in:
                 st.success(f"Logged in as {role}")
                 st.experimental_rerun()
             else:
-                st.error("Invalid credentials")
+                st.error("Invalid credentials or not an official hospital email")
     elif tab == "Register":
         register_user()
 else:
