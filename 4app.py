@@ -36,7 +36,7 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
     qualifications TEXT
 )""")
 
-# Requests / Appointments Table
+# Appointments Table
 c.execute("""CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_id INTEGER,
@@ -65,7 +65,6 @@ c.execute("""CREATE TABLE IF NOT EXISTS reports (
     follow_up TEXT,
     attached_docs TEXT
 )""")
-
 conn.commit()
 
 # ---------- Helper Functions ----------
@@ -116,7 +115,7 @@ def get_kpi():
 
 # ---------- Navigation ----------
 menu = ["Home","About Us","Services","Contact","Staff Profiles","Login/Register"]
-choice = st.sidebar.selectbox("Navigate", menu)
+choice = st.sidebar.selectbox("Navigate", menu, key="nav_menu")
 
 # ---------- Public Pages ----------
 if choice=="Home":
@@ -141,16 +140,19 @@ elif choice=="Staff Profiles":
 elif choice=="Login/Register":
     tab1, tab2 = st.tabs(["Login","Register"])
     with tab1:
-        email=st.text_input("Email"); password=st.text_input("Password",type="password")
-        if st.button("Login"):
+        email=st.text_input("Email", key="login_email")
+        password=st.text_input("Password",type="password", key="login_password")
+        if st.button("Login", key="login_btn"):
             user=login_user(email,password)
             if user: st.session_state['user']=user; st.success(f"Welcome {user[1]}! Role: {user[4]}")
             else: st.error("Invalid credentials")
     with tab2:
-        name=st.text_input("Full Name"); email_reg=st.text_input("Email"); password_reg=st.text_input("Password",type="password")
-        role=st.selectbox("Role",["patient","staff","admin"])
-        if st.button("Register"):
-            if register_user(name,email_reg,password_reg,role):
+        name_reg=st.text_input("Full Name", key="reg_name")
+        email_reg=st.text_input("Email", key="reg_email")
+        password_reg=st.text_input("Password",type="password", key="reg_password")
+        role_reg=st.selectbox("Role",["patient","staff","admin"], key="reg_role")
+        if st.button("Register", key="reg_btn"):
+            if register_user(name_reg,email_reg,password_reg,role_reg):
                 st.success("Registration successful!")
             else: st.error("Email already exists!")
 
@@ -158,37 +160,39 @@ elif choice=="Login/Register":
 if 'user' in st.session_state:
     user=st.session_state['user']
     st.markdown(f'<div class="card"><h2>Dashboard | {user[4].capitalize()}</h2><p>Welcome {user[1]}</p></div>',unsafe_allow_html=True)
-    
-    # Patient Dashboard
+
+    # --- Patient Dashboard ---
     if user[4]=="patient":
         tab1, tab2, tab3 = st.tabs(["Appointments","Reports","Payments"])
         with tab1:
             st.markdown('<h3>Book Appointment</h3>',unsafe_allow_html=True)
-            service=st.selectbox("Service",["Medication Management","Psychotherapy"])
-            date=st.date_input("Date"); time=st.text_input("Time"); tele=st.selectbox("Telehealth?",["Yes","No"])
-            if st.button("Book Appointment"):
+            service=st.selectbox("Service",["Medication Management","Psychotherapy"], key="patient_service")
+            date=st.date_input("Date", key="patient_date")
+            time=st.text_input("Time", key="patient_time")
+            tele=st.selectbox("Telehealth?",["Yes","No"], key="patient_tele")
+            if st.button("Book Appointment", key="patient_book"):
                 create_appointment(user[0],service,str(date),time,telehealth=tele)
                 st.success("Appointment booked!")
             st.markdown('<h3>My Appointments</h3>',unsafe_allow_html=True)
             apps=get_user_appointments(user[0])
             for a in apps:
-                st.info(f"{a[3]} on {a[4]} at {a[5]} | Telehealth: {a[6]} | Status: {a[7]} | Payment: {a[8]}")
+                st.info(f"{a[3]} on {a[4]} at {a[5]} | Telehealth: {a[6]} | Status: {a[7]} | Payment: {a[8]}", icon="📅")
 
         with tab2:
             st.markdown('<h3>My Reports</h3>',unsafe_allow_html=True)
             reports=get_patient_reports(user[0])
             for r in reports:
-                st.info(f"Date: {r[3]} | Symptoms: {r[4]} | Diagnosis: {r[5]} | Treatment: {r[6]} | Prescriptions: {r[7]}")
+                st.info(f"Date: {r[3]} | Symptoms: {r[4]} | Diagnosis: {r[5]} | Treatment: {r[6]} | Prescriptions: {r[7]}", icon="📝")
 
         with tab3:
             st.markdown('<h3>Payments</h3>',unsafe_allow_html=True)
             for a in apps:
                 status=a[8]
-                if status=="Unpaid" and st.button(f"Mark Paid for {a[3]}"):
+                if status=="Unpaid" and st.button(f"Mark Paid for {a[3]}", key=f"pay_{a[0]}"):
                     mark_payment(a[0],"Paid")
                     st.success("Payment updated!")
 
-    # Staff Dashboard
+    # --- Staff Dashboard ---
     elif user[4]=="staff":
         tab1,tab2,tab3=st.tabs(["My Patients","Reports","Appointments"])
         with tab1:
@@ -196,13 +200,17 @@ if 'user' in st.session_state:
             apps=get_all_appointments()
             for a in apps:
                 if a[2]==user[1] or a[2]==None:
-                    st.info(f"Patient: {a[1]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]}")
+                    st.info(f"Patient: {a[1]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]}", icon="🧑‍⚕️")
         with tab2:
             st.markdown('<h3>Create Reports</h3>',unsafe_allow_html=True)
             c.execute("SELECT id,name FROM users WHERE role='patient'"); patients=c.fetchall()
-            patient_select=st.selectbox("Select Patient",[f"{p[1]}|{p[0]}" for p in patients])
-            symptoms=st.text_area("Symptoms"); diagnosis=st.text_area("Diagnosis"); treatment=st.text_area("Treatment"); prescriptions=st.text_area("Prescriptions"); date=datetime.today()
-            if st.button("Submit Report"):
+            patient_select=st.selectbox("Select Patient",[f"{p[1]}|{p[0]}" for p in patients], key="staff_patient")
+            symptoms=st.text_area("Symptoms", key="staff_symptoms")
+            diagnosis=st.text_area("Diagnosis", key="staff_diagnosis")
+            treatment=st.text_area("Treatment", key="staff_treatment")
+            prescriptions=st.text_area("Prescriptions", key="staff_prescriptions")
+            date=datetime.today()
+            if st.button("Submit Report", key="staff_submit_report"):
                 pid=int(patient_select.split("|")[1])
                 submit_report(pid,user[0],str(date),symptoms,diagnosis,treatment,prescriptions)
                 st.success("Report submitted!")
@@ -212,23 +220,23 @@ if 'user' in st.session_state:
             apps=get_all_appointments()
             for a in apps:
                 if a[2]==user[1]:
-                    st.info(f"Patient: {a[1]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]}")
+                    st.info(f"Patient: {a[1]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]}", icon="📅")
 
-    # Admin Dashboard
+    # --- Admin Dashboard ---
     elif user[4]=="admin":
         tab1,tab2,tab3,tab4=st.tabs(["Users","Appointments","Reports","Analytics"])
         with tab1:
             st.markdown('<h3>Manage Users</h3>',unsafe_allow_html=True)
             c.execute("SELECT id,name,email,role FROM users"); users=c.fetchall()
-            for u in users: st.info(f"{u[1]} | {u[2]} | Role: {u[3]}")
+            for u in users: st.info(f"{u[1]} | {u[2]} | Role: {u[3]}", icon="🧑‍⚕️")
         with tab2:
             st.markdown('<h3>Appointments Management</h3>',unsafe_allow_html=True)
             apps=get_all_appointments()
             for a in apps:
                 st.info(f"Patient: {a[1]} | Staff: {a[2]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]} | Payment: {a[8]}")
                 cols=st.columns(2)
-                if cols[0].button(f"Approve {a[0]}"): update_appointment_status(a[0],"Approved"); st.success("Approved")
-                if cols[1].button(f"Cancel {a[0]}"): update_appointment_status(a[0],"Canceled"); st.error("Canceled")
+                if cols[0].button(f"Approve {a[0]}", key=f"admin_approve_{a[0]}"): update_appointment_status(a[0],"Approved"); st.success("Approved")
+                if cols[1].button(f"Cancel {a[0]}", key=f"admin_cancel_{a[0]}"): update_appointment_status(a[0],"Canceled"); st.error("Canceled")
         with tab3:
             st.markdown('<h3>Reports</h3>',unsafe_allow_html=True)
             reports=get_all_reports()
@@ -237,13 +245,14 @@ if 'user' in st.session_state:
         with tab4:
             st.markdown('<h3>Analytics</h3>',unsafe_allow_html=True)
             total_patients,total_staff,total_apps,pending,approved,canceled=get_kpi()
-            st.success(f"Total Patients: {total_patients}")
-            st.info(f"Total Staff: {total_staff}")
-            st.warning(f"Pending Appointments: {pending}")
-            st.success(f"Approved Appointments: {approved}")
-            st.error(f"Canceled Appointments: {canceled}")
+            df=pd.DataFrame({
+                "Category":["Total Patients","Total Staff","Total Appointments","Pending","Approved","Canceled"],
+                "Count":[total_patients,total_staff,total_apps,pending,approved,canceled]
+            })
+            fig=px.bar(df,x="Category",y="Count",color="Category",title="Hospital Overview")
+            st.plotly_chart(fig,use_container_width=True)
 
-    # Logout
-    if st.button("Logout"):
-        del st.session_state['user']
-        st.success("Logged out successfully.")
+    # --- Logout ---
+    if st.button("Logout", key="logout_btn"):
+        st.session_state.pop("user")
+        st.success("Logged out successfully!")
