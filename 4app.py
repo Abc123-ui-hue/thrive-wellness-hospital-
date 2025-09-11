@@ -1,244 +1,204 @@
 import streamlit as st
-import pandas as pd
-import os
-import base64
+import sqlite3
+from hashlib import sha256
 from datetime import datetime
+import pandas as pd
+import plotly.express as px
 
-# --------------------------
-# Page Config & Styling
-# --------------------------
-st.set_page_config(page_title="Thrive Wellness Hospital Portal", layout="centered")
+# ---------- Page Config ----------
+st.set_page_config(page_title="Thrive Mental Wellness", layout="wide")
 
-# ✅ Embedded Base64 Logo (replace with your own if needed)
-LOGO_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAOEAAADhCAYAAAA+7c6nAAAABHNCSVQICAgIfAhkiAAAIABJREFU"
-    "eJzt3X9sXNd93/H3O2zjDIqErJ0QAkixJQFSSgvhCltZUBYkQmCNC1glIkRxtT5vAk2Wi8TstLaD"
-    "FNUiZsAJpkbUgx9mAIQCYgSMLVhbAqtqimDQoxAyFhAwLhrGBY1iyTAoRzNn8uTsOfdHZvucO/fO"
-    "mc8Z3b2zszM/9/5+3n3O3bt3772f53e9/3cf5/ua3AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAADwXzWNPQnWfFfOKwAAAABJRU5ErkJggg=="
-)
+# ---------- CSS ----------
+st.markdown("""
+<style>
+.stApp { background: linear-gradient(to right, #74ebd5, #acb6e5); color: #0a3d62; }
+h1,h2,h3,h4 { color:#0a3d62; font-family: 'Helvetica', sans-serif; }
+.card { background-color: rgba(255,255,255,0.85); border-radius: 15px; padding: 20px; margin-bottom:20px; box-shadow: 2px 2px 10px rgba(0,0,0,0.2);}
+div.stButton > button { background-color:#0a3d62; color:white; border-radius:10px; height:40px; width:180px; font-size:16px; }
+div.stButton > button:hover { background-color:#3c6382; }
+.stAlert { border-left:5px solid #16a085; background-color:#d1f2eb; }
+.stTabs [role="tab"] { color:#0a3d62; font-weight:bold;}
+</style>
+""", unsafe_allow_html=True)
 
-st.markdown(
-    """
-    <style>
-        body {
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f0ff 100%) !important;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        .main {
-            background: white;
-            border-radius: 18px;
-            padding: 30px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-        }
-        .stButton>button {
-            background-color: #1E90FF;
-            color: white;
-            font-weight: bold;
-            border-radius: 10px;
-            padding: 10px 20px;
-            border: none;
-            transition: 0.3s;
-        }
-        .stButton>button:hover {
-            background-color: #4682B4;
-            color: #fff;
-        }
-        .stTextInput>div>div>input {
-            border-radius: 10px;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# ---------- Database Setup ----------
+conn = sqlite3.connect("database.db", check_same_thread=False)
+c = conn.cursor()
 
-# --------------------------
-# Logo & Title
-# --------------------------
-st.markdown(
-    f"""
-    <div style="text-align:center; margin-bottom:20px;">
-        <img src="data:image/png;base64,{LOGO_BASE64}" alt="Hospital Logo" width="120"/>
-        <h2 style="color:#1E90FF;">🏥 Thrive Wellness Hospital Portal</h2>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# Users Table
+c.execute("""CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    email TEXT UNIQUE,
+    password TEXT,
+    role TEXT
+)""")
 
-# --------------------------
-# CSV Files for Persistence
-# --------------------------
-USERS_FILE = "users.csv"
-PATIENTS_FILE = "patients.csv"
-STAFF_FILE = "staff.csv"
-APPOINTMENTS_FILE = "appointments.csv"
+# Requests Table
+c.execute("""CREATE TABLE IF NOT EXISTS requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER,
+    type TEXT,
+    description TEXT,
+    date TEXT,
+    status TEXT DEFAULT 'Pending',
+    FOREIGN KEY(patient_id) REFERENCES users(id)
+)""")
 
-def init_csv(file, columns):
-    if not os.path.exists(file):
-        pd.DataFrame(columns=columns).to_csv(file, index=False)
+# Reports Table
+c.execute("""CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER,
+    staff_id INTEGER,
+    sickness TEXT,
+    solution TEXT,
+    date TEXT,
+    FOREIGN KEY(patient_id) REFERENCES users(id),
+    FOREIGN KEY(staff_id) REFERENCES users(id)
+)""")
+conn.commit()
 
-init_csv(USERS_FILE, ["email", "password", "role"])
-init_csv(PATIENTS_FILE, ["name", "condition", "date", "plan", "recorded_by"])
-init_csv(STAFF_FILE, ["name", "specialization", "email", "photo"])
-init_csv(APPOINTMENTS_FILE, ["patient", "service", "date", "staff_email"])
+# ---------- Helper Functions ----------
+def hash_password(password): return sha256(password.encode()).hexdigest()
+def register_user(name,email,password,role='patient'):
+    try: c.execute("INSERT INTO users (name,email,password,role) VALUES (?,?,?,?)",(name,email,hash_password(password),role)); conn.commit(); return True
+    except sqlite3.IntegrityError: return False
+def login_user(email,password): c.execute("SELECT * FROM users WHERE email=? AND password=?",(email,hash_password(password))); return c.fetchone()
+def submit_request(patient_id,type_,desc,date): c.execute("INSERT INTO requests (patient_id,type,description,date) VALUES (?,?,?,?)",(patient_id,type_,desc,date)); conn.commit()
+def get_user_requests(patient_id): c.execute("SELECT * FROM requests WHERE patient_id=?",(patient_id,)); return c.fetchall()
+def get_all_requests(): c.execute("""SELECT requests.id, users.name, users.email, requests.type, requests.description, requests.date, requests.status 
+    FROM requests JOIN users ON requests.patient_id=users.id"""); return c.fetchall()
+def update_request_status(request_id,status): c.execute("UPDATE requests SET status=? WHERE id=?",(status,request_id)); conn.commit()
+def submit_report(patient_id,staff_id,sickness,solution,date): c.execute("INSERT INTO reports (patient_id,staff_id,sickness,solution,date) VALUES (?,?,?,?,?)",(patient_id,staff_id,sickness,solution,date)); conn.commit()
+def get_patient_reports(patient_id): c.execute("SELECT * FROM reports WHERE patient_id=?",(patient_id,)); return c.fetchall()
+def get_all_reports(): c.execute("""SELECT reports.id, p.name, s.name, reports.sickness, reports.solution, reports.date 
+    FROM reports JOIN users p ON reports.patient_id=p.id JOIN users s ON reports.staff_id=s.id"""); return c.fetchall()
+def get_kpi(): 
+    c.execute("SELECT COUNT(*) FROM users WHERE role='patient'"); total_patients=c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM users WHERE role='staff'"); total_staff=c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM requests"); total_requests=c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM requests WHERE status='Pending'"); pending=c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM requests WHERE status='Approved'"); approved=c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM requests WHERE status='Rejected'"); rejected=c.fetchone()[0]
+    return total_patients,total_staff,total_requests,pending,approved,rejected
 
-# --------------------------
-# Session States
-# --------------------------
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-if "email" not in st.session_state:
-    st.session_state["email"] = None
-if "role" not in st.session_state:
-    st.session_state["role"] = None
-if "page" not in st.session_state:
-    st.session_state["page"] = "login"
+# ---------- Streamlit UI ----------
+menu = ["Home","Register","Login"]
+choice = st.sidebar.selectbox("Menu", menu)
 
-# --------------------------
-# Auth Functions
-# --------------------------
-def register_user(email, password, role):
-    users = pd.read_csv(USERS_FILE)
-    if email in users["email"].values:
-        return False, "⚠️ User already exists!"
-    users.loc[len(users)] = [email, password, role]
-    users.to_csv(USERS_FILE, index=False)
-    return True, "✅ Registration successful! You can now log in."
+# ---------- Home ----------
+if choice=="Home":
+    st.markdown('<div class="card"><h1>Welcome to Thrive Mental Wellness Portal</h1><p>Professional mental wellness management for patients and staff.</p></div>',unsafe_allow_html=True)
 
-def login_user(email, password):
-    users = pd.read_csv(USERS_FILE)
-    match = users[(users["email"] == email) & (users["password"] == password)]
-    if not match.empty:
-        st.session_state["logged_in"] = True
-        st.session_state["email"] = email
-        st.session_state["role"] = match.iloc[0]["role"]
-        return True
-    return False
-
-def logout_user():
-    st.session_state["logged_in"] = False
-    st.session_state["email"] = None
-    st.session_state["role"] = None
-    st.session_state["page"] = "login"
-
-# --------------------------
-# Pages
-# --------------------------
-def show_login():
-    st.title("🔐 Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if login_user(email, password):
-            st.success("✅ Login successful!")
-        else:
-            st.error("❌ Invalid credentials.")
-
-    st.info("Don't have an account? Register below 👇")
-    if st.button("Go to Register"):
-        st.session_state["page"] = "register"
-
-def show_register():
-    st.title("📝 Register")
-    email = st.text_input("Email (e.g., meshmuth18@gmail.com)")
-    password = st.text_input("Password", type="password")
-    role = st.selectbox("Role", ["staff", "admin"])
-
+# ---------- Register ----------
+elif choice=="Register":
+    st.markdown('<div class="card"><h2>Create Account</h2></div>',unsafe_allow_html=True)
+    name=st.text_input("Full Name"); email=st.text_input("Email"); password=st.text_input("Password",type="password")
+    role=st.selectbox("Role",["patient","staff","admin"])
     if st.button("Register"):
-        success, msg = register_user(email, password, role)
-        if success:
-            st.success(msg)
-        else:
-            st.error(msg)
+        if register_user(name,email,password,role): st.success("Registration successful! Login now.")
+        else: st.error("Email already exists. Try a different one.")
 
-    if st.button("Back to Login"):
-        st.session_state["page"] = "login"
+# ---------- Login ----------
+elif choice=="Login":
+    st.markdown('<div class="card"><h2>Login</h2></div>',unsafe_allow_html=True)
+    email=st.text_input("Email"); password=st.text_input("Password",type="password")
+    if st.button("Login"):
+        user=login_user(email,password)
+        if user: st.session_state['user']=user; st.success(f"Welcome {user[1]}! Role: {user[4]}")
+        else: st.error("Invalid email or password")
 
-def show_admin_dashboard():
-    st.title("🏥 Admin Dashboard")
-    st.write(f"Welcome **{st.session_state['email']}** (Admin)")
+# ---------- Dashboard ----------
+if 'user' in st.session_state:
+    user=st.session_state['user']
+    st.markdown(f'<div class="card"><h2>Dashboard</h2><p>Logged in as <b>{user[1]}</b> | Role: <b>{user[4]}</b></p></div>',unsafe_allow_html=True)
 
-    st.subheader("📊 Manage Patients")
-    pname = st.text_input("Patient Name")
-    condition = st.text_input("Illness / Condition")
-    pdate = st.date_input("Admission Date")
-    plan = st.text_area("Treatment Plan")
-    if st.button("Save Patient Record"):
-        patients = pd.read_csv(PATIENTS_FILE)
-        patients.loc[len(patients)] = [pname, condition, str(pdate), plan, st.session_state["email"]]
-        patients.to_csv(PATIENTS_FILE, index=False)
-        st.success("✅ Patient record saved!")
+    # ---------- Patient ----------
+    if user[4]=="patient":
+        tab1,tab2=st.tabs(["My Requests","My Reports"])
+        with tab1:
+            st.markdown('<div class="card"><h3>Submit Therapy/Wellness Request</h3></div>',unsafe_allow_html=True)
+            req_type=st.selectbox("Request Type",["Therapy Session","General Wellness"]); desc=st.text_area("Description"); date=st.date_input("Preferred Date",datetime.today())
+            if st.button("Submit Request", key="patient_submit_request"):
+                submit_request(user[0], req_type, desc, date)
+                st.success("Request Submitted!")
 
-    st.dataframe(pd.read_csv(PATIENTS_FILE))
+            st.markdown('<div class="card"><h3>My Requests Status</h3></div>',unsafe_allow_html=True)
+            requests=get_user_requests(user[0])
+            for r in requests:
+                color={"Pending":"orange","Approved":"green","Rejected":"red"}[r[5]]
+                st.markdown(f'<b>{r[2]}</b>: {r[3]} | Date: {r[4]} | <span style="color:{color};font-weight:bold;">{r[5]}</span>',unsafe_allow_html=True)
 
-    st.subheader("👨‍⚕️ Manage Staff Profiles")
-    sname = st.text_input("Staff Full Name")
-    spec = st.text_input("Specialization")
-    semail = st.text_input("Staff Email")
-    if st.button("Save Staff Profile"):
-        staff = pd.read_csv(STAFF_FILE)
-        staff.loc[len(staff)] = [sname, spec, semail, "uploaded_later"]
-        staff.to_csv(STAFF_FILE, index=False)
-        st.success("✅ Staff profile saved!")
+        with tab2:
+            st.markdown('<div class="card"><h3>My Reports</h3></div>',unsafe_allow_html=True)
+            reports=get_patient_reports(user[0])
+            for r in reports:
+                st.info(f"Sickness: {r[3]}, Solution: {r[4]}, Date: {r[5]}")
 
-    st.dataframe(pd.read_csv(STAFF_FILE))
+    # ---------- Staff ----------
+    elif user[4]=="staff":
+        tab1,tab2=st.tabs(["Patient Requests","Submit Report"])
+        with tab1:
+            st.markdown('<div class="card"><h3>All Patient Requests</h3></div>',unsafe_allow_html=True)
+            requests=get_all_requests()
+            for r in requests:
+                if r[6]=="Pending":
+                    st.markdown(f'Patient: {r[1]} | Type: {r[3]} | Desc: {r[4]} | Date: {r[5]} | Status: {r[6]}')
 
-    st.subheader("📅 Appointments")
-    st.dataframe(pd.read_csv(APPOINTMENTS_FILE))
+        with tab2:
+            st.markdown('<div class="card"><h3>Submit Sickness Report & Solution</h3></div>',unsafe_allow_html=True)
+            c.execute("SELECT id,name FROM users WHERE role='patient'"); patients=c.fetchall()
+            patient_select=st.selectbox("Select Patient",[f"{p[1]}|{p[0]}" for p in patients])
+            sickness=st.text_area("Sickness"); solution=st.text_area("Solution"); date=st.date_input("Report Date",datetime.today())
+            if st.button("Submit Report", key=f"submit_report_{patient_select}"):
+                pid=int(patient_select.split("|")[1])
+                submit_report(pid,user[0],sickness,solution,date)
+                st.success("Report Submitted!")
 
-    if st.button("Logout"):
-        logout_user()
+    # ---------- Admin ----------
+    elif user[4]=="admin":
+        tab1,tab2,tab3,tab4=st.tabs(["Users","Manage Requests","Analytics","KPIs"])
+        with tab1:
+            st.markdown('<div class="card"><h3>Registered Users</h3></div>',unsafe_allow_html=True)
+            c.execute("SELECT id,name,email,role FROM users"); users=c.fetchall()
+            for u in users: st.info(f"ID:{u[0]}, Name:{u[1]}, Email:{u[2]}, Role:{u[3]}")
 
-def show_staff_dashboard():
-    st.title("👩‍⚕️ Staff Dashboard")
-    st.write(f"Welcome **{st.session_state['email']}** (Staff)")
+        with tab2:
+            st.markdown('<div class="card"><h3>Manage Requests</h3></div>',unsafe_allow_html=True)
+            requests=get_all_requests()
+            for r in requests:
+                color={"Pending":"orange","Approved":"green","Rejected":"red"}[r[6]]
+                st.markdown(f'Patient:{r[1]} | Type:{r[3]} | Desc:{r[4]} | Date:{r[5]} | <span style="color:{color};font-weight:bold;">{r[6]}</span>',unsafe_allow_html=True)
+                cols=st.columns(2)
+                if cols[0].button(f"Approve {r[0]}",key=f"approve_{r[0]}"):
+                    update_request_status(r[0],"Approved")
+                    st.success(f"Request {r[0]} Approved")
+                if cols[1].button(f"Reject {r[0]}",key=f"reject_{r[0]}"):
+                    update_request_status(r[0],"Rejected")
+                    st.error(f"Request {r[0]} Rejected")
 
-    st.subheader("📋 My Profile")
-    name = st.text_input("Full Name")
-    spec = st.text_input("Specialization")
-    if st.button("Save My Profile"):
-        staff = pd.read_csv(STAFF_FILE)
-        staff.loc[len(staff)] = [name, spec, st.session_state["email"], "uploaded_later"]
-        staff.to_csv(STAFF_FILE, index=False)
-        st.success("✅ Profile saved!")
+        with tab3:
+            st.markdown('<div class="card"><h3>Analytics Dashboard</h3></div>',unsafe_allow_html=True)
+            df=pd.read_sql_query("SELECT type,status,date FROM requests",conn)
+            if not df.empty:
+                status_count=df['status'].value_counts().reset_index(); status_count.columns=['Status','Count']
+                fig1=px.pie(status_count,names='Status',values='Count',title="Requests by Status"); st.plotly_chart(fig1,use_container_width=True)
+                type_count=df['type'].value_counts().reset_index(); type_count.columns=['Type','Count']
+                fig2=px.bar(type_count,x='Type',y='Count',color='Type',title="Requests by Type"); st.plotly_chart(fig2,use_container_width=True)
+                df['date']=pd.to_datetime(df['date']); time_count=df.groupby(df['date'].dt.date).size().reset_index(name='Count')
+                fig3=px.line(time_count,x='date',y='Count',title="Requests Over Time"); st.plotly_chart(fig3,use_container_width=True)
+            else: st.info("No requests to show analytics.")
 
-    st.subheader("🧑‍🤝‍🧑 Record Patient Info")
-    pname = st.text_input("Patient Name")
-    condition = st.text_input("Illness / Condition")
-    pdate = st.date_input("Visit Date")
-    notes = st.text_area("Notes / Observations")
-    if st.button("Save Patient Record"):
-        patients = pd.read_csv(PATIENTS_FILE)
-        patients.loc[len(patients)] = [pname, condition, str(pdate), notes, st.session_state["email"]]
-        patients.to_csv(PATIENTS_FILE, index=False)
-        st.success("✅ Patient record saved!")
+        with tab4:
+            st.markdown('<div class="card"><h3>Key KPIs</h3></div>',unsafe_allow_html=True)
+            total_patients,total_staff,total_requests,pending,approved,rejected=get_kpi()
+            st.success(f"Total Patients: {total_patients}")
+            st.info(f"Total Staff: {total_staff}")
+            st.warning(f"Pending Requests: {pending}")
+            st.success(f"Approved Requests: {approved}")
+            st.error(f"Rejected Requests: {rejected}")
 
-    st.subheader("📅 My Appointments")
-    patient = st.text_input("Patient for Appointment")
-    service = st.text_input("Service")
-    adate = st.date_input("Appointment Date")
-    if st.button("Save Appointment"):
-        apps = pd.read_csv(APPOINTMENTS_FILE)
-        apps.loc[len(apps)] = [patient, service, str(adate), st.session_state["email"]]
-        apps.to_csv(APPOINTMENTS_FILE, index=False)
-        st.success("✅ Appointment saved!")
-
-    st.dataframe(pd.read_csv(APPOINTMENTS_FILE))
-
-    if st.button("Logout"):
-        logout_user()
-
-# --------------------------
-# Router
-# --------------------------
-if not st.session_state["logged_in"]:
-    if st.session_state["page"] == "login":
-        show_login()
-    elif st.session_state["page"] == "register":
-        show_register()
-else:
-    if st.session_state["role"] == "admin":
-        show_admin_dashboard()
-    elif st.session_state["role"] == "staff":
-        show_staff_dashboard()
+    # ---------- Logout ----------
+    if st.button("Logout", key="logout_button"):
+        del st.session_state['user']
+        st.success("Logged out successfully.")
