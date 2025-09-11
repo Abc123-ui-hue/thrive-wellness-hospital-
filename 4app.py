@@ -8,7 +8,7 @@ DB_FILE = "hospital.db"
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 c = conn.cursor()
 
-# Users Table
+# Users Table - create if not exists
 c.execute("""CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -16,9 +16,17 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
     password TEXT NOT NULL,
     role TEXT NOT NULL,
     bio TEXT,
-    phone TEXT,
-    avatar_url TEXT
+    phone TEXT
 )""")
+conn.commit()
+
+# Add avatar_url column if it doesn't exist
+try:
+    c.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
+    conn.commit()
+except sqlite3.OperationalError:
+    # Column already exists
+    pass
 
 # Reports Table
 c.execute("""CREATE TABLE IF NOT EXISTS reports (
