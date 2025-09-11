@@ -110,6 +110,18 @@ def get_appointments():
     c.execute("SELECT * FROM appointments ORDER BY date DESC, time DESC")
     return c.fetchall()
 
+def safe_display_image(img_path, width=100):
+    """Safely display avatar: URL, local path, or fallback."""
+    if img_path:
+        if img_path.startswith("http"):
+            st.image(img_path, width=width)
+        elif os.path.exists(img_path):
+            st.image(open(img_path, "rb"), width=width)
+        else:
+            st.image(get_avatar_url(), width=width)
+    else:
+        st.image(get_avatar_url(), width=width)
+
 # ---------------- Streamlit Config ----------------
 st.set_page_config(page_title="Thrive Wellness Hospital Portal", layout="wide")
 st.markdown("""
@@ -171,7 +183,7 @@ if not st.session_state.logged_in:
         register_tab()
 else:
     user = st.session_state.user
-    st.sidebar.image(user[7], width=100)
+    safe_display_image(user[7], width=100)  # <- Safe avatar display
     st.sidebar.write(f"**{user[1]}**")
     st.sidebar.write(f"Role: {user[4]}")
     st.sidebar.write(f"Bio: {user[5]}")
@@ -228,7 +240,7 @@ else:
         for r in reports:
             col1, col2 = st.columns([1,5])
             with col1:
-                st.image(r[5], width=50)
+                safe_display_image(r[5], width=50)
             with col2:
                 st.markdown(f"**Patient:** {r[1]}  \n**Treatment:** {r[2]}  \n**Solution:** {r[3]}  \n**By:** {r[4]}  \n**At:** {r[6]}")
             st.markdown("---")
