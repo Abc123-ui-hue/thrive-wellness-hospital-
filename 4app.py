@@ -31,29 +31,35 @@ ensure_column("users", "avatar_url")
 
 # ---------------- Reports Table ----------------
 c.execute("""CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_name TEXT,
-    treatment TEXT,
-    solution TEXT,
-    created_by TEXT,
-    created_by_avatar TEXT
+    id INTEGER PRIMARY KEY AUTOINCREMENT
 )""")
 conn.commit()
-ensure_column("reports", "created_at")
+for col, typ in [
+    ("patient_name", "TEXT"),
+    ("treatment", "TEXT"),
+    ("solution", "TEXT"),
+    ("created_by", "TEXT"),
+    ("created_by_avatar", "TEXT"),
+    ("created_at", "TEXT")
+]:
+    ensure_column("reports", col, typ)
 
 # ---------------- Appointments Table ----------------
 c.execute("""CREATE TABLE IF NOT EXISTS appointments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_name TEXT,
-    service TEXT,
-    date TEXT,
-    time TEXT,
-    provider TEXT,
-    telehealth BOOLEAN,
-    status TEXT,
-    created_by TEXT
+    id INTEGER PRIMARY KEY AUTOINCREMENT
 )""")
 conn.commit()
+for col, typ in [
+    ("patient_name", "TEXT"),
+    ("service", "TEXT"),
+    ("date", "TEXT"),
+    ("time", "TEXT"),
+    ("provider", "TEXT"),
+    ("telehealth", "BOOLEAN"),
+    ("status", "TEXT"),
+    ("created_by", "TEXT")
+]:
+    ensure_column("appointments", col, typ)
 
 # ---------------- Helper Functions ----------------
 def hash_password(password):
