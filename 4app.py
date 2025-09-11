@@ -101,7 +101,7 @@ elif page == "Book Appointment":
         date_time = st.date_input("Preferred Date")
         submit = st.form_submit_button("Submit Appointment")
     
-    if submit:
+if submit:
     submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.submissions.loc[len(st.session_state.submissions)] = [name, email, phone, service, date_time, submitted_at]
     st.success("✅ Appointment submitted successfully!")
