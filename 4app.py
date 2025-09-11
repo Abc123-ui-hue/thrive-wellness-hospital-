@@ -171,8 +171,8 @@ def about_us_page():
     st.markdown("**Certifications & Awards:**")
     st.markdown("- Accredited Mental Health Clinic")
     st.markdown("- Award for Outstanding Care 2024")
-    st.image("clinic_photo_1.jpg", caption="Our Clinic Environment")
-    st.image("clinic_photo_2.jpg", caption="Patient-friendly waiting area")
+    st.image("https://images.unsplash.com/photo-1596495577886-d920f40d4b6f?auto=format&fit=crop&w=800&q=80", caption="Our Clinic Environment")
+    st.image("https://images.unsplash.com/photo-1588776814546-c10bfe5da42f?auto=format&fit=crop&w=800&q=80", caption="Patient-friendly waiting area")
 
 def services_page():
     st.header("Our Services")
