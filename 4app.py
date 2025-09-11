@@ -102,28 +102,28 @@ elif page == "Book Appointment":
         submit = st.form_submit_button("Submit Appointment")
     
     if submit:
-        submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.session_state.submissions.loc[len(st.session_state.submissions)] = [name, email, phone, service, date_time, submitted_at]
-        st.success("✅ Appointment submitted successfully!")
-        try:
-           msg_content = f"""New Appointment Submission
-            Name: {name}
-            Email: {email}
-            Phone: {phone}
-            Service: {service}
-            Date: {date_time}
-            Submitted At: {submitted_at}"""
+    submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.session_state.submissions.loc[len(st.session_state.submissions)] = [name, email, phone, service, date_time, submitted_at]
+    st.success("✅ Appointment submitted successfully!")
+    try:
+        msg_content = f"""New Appointment Submission
+Name: {name}
+Email: {email}
+Phone: {phone}
+Service: {service}
+Date: {date_time}
+Submitted At: {submitted_at}"""
+        msg = MIMEText(msg_content)
+        msg["Subject"] = "New Appointment Submission - Thrive Mental Wellness"
+        msg["From"] = EMAIL_SENDER
+        msg["To"] = EMAIL_RECEIVER
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            server.send_message(msg)
+        st.info("📧 Notification sent to clinic email.")
+    except Exception as e:
+        st.error(f"❌ Email failed: {e}")
 
-            msg = MIMEText(msg_content)
-            msg["Subject"] = "New Appointment Submission - Thrive Mental Wellness"
-            msg["From"] = EMAIL_SENDER
-            msg["To"] = EMAIL_RECEIVER
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-                server.send_message(msg)
-            st.info("📧 Notification sent to clinic email.")
-        except Exception as e:
-            st.error(f"❌ Email failed: {e}")
 
 # ---------------- ADMIN PAGE ----------------
 elif page == "Admin":
