@@ -106,7 +106,11 @@ def create_report(patient_name, treatment, solution, created_by, avatar_url):
     conn.commit()
 
 def get_reports():
-    c.execute("SELECT * FROM reports ORDER BY created_at DESC")
+    c.execute("""
+        SELECT patient_name, treatment, solution, created_by, created_by_avatar, created_at
+        FROM reports
+        ORDER BY created_at DESC
+    """)
     return c.fetchall()
 
 def create_appointment(patient_name, service, date, time, provider, telehealth, created_by):
@@ -120,7 +124,6 @@ def get_appointments():
     return c.fetchall()
 
 def safe_display_image(img_path, width=100):
-    """Safely display avatar: URL, local path, or fallback."""
     if img_path:
         if img_path.startswith("http"):
             st.image(img_path, width=width)
@@ -154,10 +157,31 @@ def home_page():
     st.button("Book Appointment")
     st.button("Contact Us")
     st.markdown("**Featured Staff:** Cecilia Wamburu PMHNP-BC")
-    st.markdown("**Testimonials / Success Stories**: Patient A, Patient B")
+    st.markdown("**Testimonials / Success Stories**")
+    st.markdown("- Patient A: \"Great care!\"  \n- Patient B: \"Highly recommend!\"")
     st.markdown("Follow us on [Facebook](#) | [Twitter](#) | [Instagram](#)")
 
-# ---------------- Login/Register Functions ----------------
+def about_us_page():
+    st.header("About Us")
+    st.markdown("**Mission:** Provide compassionate mental health care")
+    st.markdown("**Vision:** Empower mental wellness for all")
+    st.markdown("**Staff Bios & Credentials:**")
+    st.markdown("- Cecilia Wamburu PMHNP-BC: Psychiatric Nurse Practitioner")
+    st.markdown("- John Doe Therapist: Licensed Therapist")
+    st.markdown("**Certifications & Awards:**")
+    st.markdown("- Accredited Mental Health Clinic")
+    st.markdown("- Award for Outstanding Care 2024")
+    st.image("clinic_photo_1.jpg", caption="Our Clinic Environment")
+    st.image("clinic_photo_2.jpg", caption="Patient-friendly waiting area")
+
+def services_page():
+    st.header("Our Services")
+    st.markdown("**Medication Management**: Personalized prescriptions and monitoring")
+    st.markdown("**Psychotherapy**: Individual, Group, and Family sessions")
+    st.markdown("**Telehealth / Online Therapy**: Secure HIPAA-compliant video sessions")
+    st.markdown("**Future Services:** We plan to expand services as needed")
+
+# ---------------- Login/Register ----------------
 def login_tab():
     st.subheader("Login")
     email = st.text_input("Login Email", key="login_email")
@@ -183,16 +207,21 @@ def register_tab():
 
 # ---------------- Main App -----------------
 if not st.session_state.logged_in:
-    tabs = st.tabs(["Home", "Login", "Register"])
-    with tabs[0]:
+    public_tabs = st.tabs(["Home","About Us","Services","Login","Register"])
+    with public_tabs[0]:
         home_page()
-    with tabs[1]:
+    with public_tabs[1]:
+        about_us_page()
+    with public_tabs[2]:
+        services_page()
+    with public_tabs[3]:
         login_tab()
-    with tabs[2]:
+    with public_tabs[4]:
         register_tab()
+
 else:
     user = st.session_state.user
-    safe_display_image(user[7], width=100)  # <- Safe avatar display
+    safe_display_image(user[7], width=100)
     st.sidebar.write(f"**{user[1]}**")
     st.sidebar.write(f"Role: {user[4]}")
     st.sidebar.write(f"Bio: {user[5]}")
@@ -204,7 +233,7 @@ else:
     if page == "Logout":
         st.session_state.logged_in = False
         st.session_state.user = None
-        st.experimental_rerun()
+        st.success("Logged out successfully!")
 
     elif page == "Profile":
         st.header("Edit Profile")
@@ -221,8 +250,8 @@ else:
             avatar_url = avatar_path
         if st.button("Update Profile", key="profile_update_btn"):
             update_profile(user[0], name, bio, phone, avatar_url)
-            st.success("Profile updated! Reload page.")
             st.session_state.user = get_user(user[2])
+            st.success("Profile updated!")
 
     elif page == "Dashboard":
         st.header("Dashboard")
@@ -243,22 +272,33 @@ else:
             solution = st.text_input("Solution", key="report_solution")
             if st.button("Create Report", key="create_report_btn"):
                 create_report(patient_name, treatment, solution, user[1], user[7])
+                st.session_state.user = get_user(user[2])
                 st.success("Report added successfully!")
         st.subheader("All Reports")
         reports = get_reports()
         for r in reports:
             col1, col2 = st.columns([1,5])
             with col1:
-                safe_display_image(r[5], width=50)
+                safe_display_image(r[4], width=50)
             with col2:
-                st.markdown(f"**Patient:** {r[1]}  \n**Treatment:** {r[2]}  \n**Solution:** {r[3]}  \n**By:** {r[4]}  \n**At:** {r[6]}")
+                st.markdown(
+                    f"**Patient:** {r[0]}  \n"
+                    f"**Treatment:** {r[1]}  \n"
+                    f"**Solution:** {r[2]}  \n"
+                    f"**By:** {r[3]}  \n"
+                    f"**At:** {r[5]}"
+                )
             st.markdown("---")
 
     elif page == "Appointments":
         st.header("Appointments")
         appointments = get_appointments()
         for a in appointments:
-            st.markdown(f"**Patient:** {a[1]} | **Service:** {a[2]} | **Date:** {a[3]} | **Time:** {a[4]} | **Provider:** {a[5]} | **Telehealth:** {a[6]} | **Status:** {a[7]}")
+            st.markdown(
+                f"**Patient:** {a[1]} | **Service:** {a[2]} | **Date:** {a[3]} | "
+                f"**Time:** {a[4]} | **Provider:** {a[5]} | **Telehealth:** {a[6]} | "
+                f"**Status:** {a[7]}"
+            )
 
     elif page == "Book Appointment":
         st.header("Book Appointment")
