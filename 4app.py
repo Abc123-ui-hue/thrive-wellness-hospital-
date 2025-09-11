@@ -1,26 +1,12 @@
 import streamlit as st
 import sqlite3
-from hashlib import sha256
 from datetime import datetime
-import pandas as pd
-import plotly.express as px
+import os
+from PIL import Image
+import requests
+from io import BytesIO
 
-# ---------- Page Config ----------
-st.set_page_config(page_title="Thrive Mental Wellness", layout="wide")
-
-# ---------- CSS Styling ----------
-st.markdown("""
-<style>
-.stApp { background: linear-gradient(to right, #e0f7fa, #e1bee7); color: #0a3d62; }
-h1,h2,h3,h4 { color:#0a3d62; font-family: 'Helvetica', sans-serif; }
-.card { background-color: rgba(255,255,255,0.9); border-radius: 15px; padding: 20px; margin-bottom:20px; box-shadow: 2px 2px 10px rgba(0,0,0,0.2);}
-div.stButton > button { background-color:#0a3d62; color:white; border-radius:10px; height:40px; width:220px; font-size:16px; }
-div.stButton > button:hover { background-color:#3c6382; }
-.stTabs [role="tab"] { color:#0a3d62; font-weight:bold;}
-</style>
-""", unsafe_allow_html=True)
-
-# ---------- Database Setup ----------
+# ---------------- Database Setup ----------------
 conn = sqlite3.connect("hospital.db", check_same_thread=False)
 c = conn.cursor()
 
@@ -33,226 +19,256 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
     role TEXT,
     bio TEXT,
     phone TEXT,
-    qualifications TEXT
+    avatar_url TEXT
+)""")
+
+# Patient Reports Table
+c.execute("""CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_name TEXT,
+    treatment TEXT,
+    solution TEXT,
+    created_by TEXT,
+    created_by_avatar TEXT,
+    created_at TEXT
 )""")
 
 # Appointments Table
 c.execute("""CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER,
-    staff_id INTEGER,
+    patient_name TEXT,
     service TEXT,
     date TEXT,
     time TEXT,
-    telehealth TEXT,
-    status TEXT DEFAULT 'Pending',
-    payment_status TEXT DEFAULT 'Unpaid',
-    notes TEXT,
-    FOREIGN KEY(patient_id) REFERENCES users(id),
-    FOREIGN KEY(staff_id) REFERENCES users(id)
+    provider TEXT,
+    telehealth BOOLEAN,
+    status TEXT,
+    created_by TEXT
 )""")
 
-# Reports Table
-c.execute("""CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id INTEGER,
-    staff_id INTEGER,
-    date TEXT,
-    symptoms TEXT,
-    diagnosis TEXT,
-    treatment TEXT,
-    prescriptions TEXT,
-    follow_up TEXT,
-    attached_docs TEXT
-)""")
 conn.commit()
 
-# ---------- Helper Functions ----------
-def hash_password(password): return sha256(password.encode()).hexdigest()
-def register_user(name,email,password,role='patient',bio="",phone="",qualifications=""):
-    try: 
-        c.execute("INSERT INTO users (name,email,password,role,bio,phone,qualifications) VALUES (?,?,?,?,?,?,?)",
-                  (name,email,hash_password(password),role,bio,phone,qualifications)); conn.commit(); return True
-    except sqlite3.IntegrityError: return False
-def login_user(email,password): 
-    c.execute("SELECT * FROM users WHERE email=? AND password=?",(email,hash_password(password)))
+# ---------------- Helper Functions ----------------
+def hash_password(password):
+    return password[::-1]  # basic hash for demo
+
+def check_password(password, hashed):
+    return hash_password(password) == hashed
+
+def get_avatar_url():
+    return f"https://thispersondoesnotexist.com/image"
+
+def get_user(email):
+    c.execute("SELECT * FROM users WHERE email=?", (email,))
     return c.fetchone()
-def create_appointment(patient_id,service,date,time,staff_id=None,telehealth="No"):
-    c.execute("INSERT INTO appointments (patient_id,service,date,time,staff_id,telehealth) VALUES (?,?,?,?,?,?)",
-              (patient_id,service,date,time,staff_id,telehealth))
+
+def register_user(name, email, password, role):
+    avatar_url = get_avatar_url()
+    try:
+        c.execute("INSERT INTO users (name,email,password,role,avatar_url) VALUES (?,?,?,?,?)",
+                  (name, email, hash_password(password), role, avatar_url))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+def update_profile(user_id, name, bio, phone, avatar_url):
+    c.execute("UPDATE users SET name=?, bio=?, phone=?, avatar_url=? WHERE id=?",
+              (name, bio, phone, avatar_url, user_id))
     conn.commit()
-def get_user_appointments(patient_id):
-    c.execute("SELECT * FROM appointments WHERE patient_id=?",(patient_id,))
-    return c.fetchall()
-def get_all_appointments(): 
-    c.execute("""SELECT appointments.id, u1.name as patient_name, u2.name as staff_name, appointments.service, appointments.date, appointments.time,
-                 appointments.telehealth, appointments.status, appointments.payment_status 
-                 FROM appointments 
-                 LEFT JOIN users u1 ON appointments.patient_id=u1.id
-                 LEFT JOIN users u2 ON appointments.staff_id=u2.id""")
-    return c.fetchall()
-def update_appointment_status(app_id,status): c.execute("UPDATE appointments SET status=? WHERE id=?",(status,app_id)); conn.commit()
-def mark_payment(app_id,status): c.execute("UPDATE appointments SET payment_status=? WHERE id=?",(status,app_id)); conn.commit()
-def submit_report(patient_id,staff_id,date,symptoms,diagnosis,treatment,prescriptions,follow_up="",attached_docs=""):
-    c.execute("INSERT INTO reports (patient_id,staff_id,date,symptoms,diagnosis,treatment,prescriptions,follow_up,attached_docs) VALUES (?,?,?,?,?,?,?,?,?)",
-              (patient_id,staff_id,date,symptoms,diagnosis,treatment,prescriptions,follow_up,attached_docs))
+
+def create_report(patient_name, treatment, solution, created_by, avatar_url):
+    c.execute("""INSERT INTO reports (patient_name,treatment,solution,created_by,created_by_avatar,created_at) 
+                 VALUES (?,?,?,?,?,?)""",
+              (patient_name, treatment, solution, created_by, avatar_url, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
-def get_patient_reports(patient_id): c.execute("SELECT * FROM reports WHERE patient_id=?",(patient_id,)); return c.fetchall()
-def get_all_reports():
-    c.execute("""SELECT reports.id, u1.name as patient, u2.name as staff, date, symptoms, diagnosis, treatment, prescriptions, follow_up, attached_docs
-                 FROM reports
-                 LEFT JOIN users u1 ON reports.patient_id=u1.id
-                 LEFT JOIN users u2 ON reports.staff_id=u2.id""")
+
+def get_reports():
+    c.execute("SELECT * FROM reports ORDER BY created_at DESC")
     return c.fetchall()
-def get_kpi():
-    c.execute("SELECT COUNT(*) FROM users WHERE role='patient'"); total_patients=c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM users WHERE role='staff'"); total_staff=c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM appointments"); total_apps=c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM appointments WHERE status='Pending'"); pending=c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM appointments WHERE status='Approved'"); approved=c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM appointments WHERE status='Canceled'"); canceled=c.fetchone()[0]
-    return total_patients,total_staff,total_apps,pending,approved,canceled
 
-# ---------- Navigation ----------
-menu = ["Home","About Us","Services","Contact","Staff Profiles","Login/Register"]
-choice = st.sidebar.selectbox("Navigate", menu, key="nav_menu")
+def create_appointment(patient_name, service, date, time, provider, telehealth, created_by):
+    c.execute("""INSERT INTO appointments (patient_name,service,date,time,provider,telehealth,status,created_by) 
+                 VALUES (?,?,?,?,?,?,?,?)""",
+              (patient_name, service, date, time, provider, telehealth, "Pending", created_by))
+    conn.commit()
 
-# ---------- Public Pages ----------
-if choice=="Home":
-    st.markdown('<div class="card"><h1>Welcome to Thrive Mental Wellness</h1><p>Comprehensive, professional mental wellness services.</p></div>',unsafe_allow_html=True)
-    st.markdown('<div class="card"><h3>Our Services</h3><ul><li>Medication Management</li><li>Psychotherapy (Individual, Group, Family)</li><li>Telehealth</li></ul></div>',unsafe_allow_html=True)
-    st.markdown('<div class="card"><h3>Featured Staff</h3><p>Cecilia Wamburu PMHNP-BC</p></div>',unsafe_allow_html=True)
-    st.markdown('<div class="card"><h3>Testimonials</h3><p>"Best care I have ever received!" - Patient A</p></div>',unsafe_allow_html=True)
-    st.markdown('<div class="card"><h3>Mental Health Tips</h3><p>Stay hydrated, exercise, and sleep well.</p></div>',unsafe_allow_html=True)
+def get_appointments():
+    c.execute("SELECT * FROM appointments ORDER BY date DESC, time DESC")
+    return c.fetchall()
 
-elif choice=="About Us":
-    st.markdown('<div class="card"><h2>About Thrive Mental Wellness</h2><p>Our mission: Provide professional mental health care to all patients.</p></div>',unsafe_allow_html=True)
+# ---------------- Streamlit Page Config ----------------
+st.set_page_config(page_title="Thrive Wellness Hospital Portal", layout="wide")
 
-elif choice=="Services":
-    st.markdown('<div class="card"><h2>Services Offered</h2><ul><li>Medication Management</li><li>Psychotherapy (Individual, Group, Family)</li><li>Telehealth/Online Therapy</li></ul></div>',unsafe_allow_html=True)
+# Full-page gradient background
+st.markdown("""
+<style>
+.stApp {background: linear-gradient(to right, #a1c4fd, #c2e9fb); min-height:100vh;}
+.stButton>button {background-color: #4CAF50; color: white;}
+.stMetric-value {font-size:2rem !important; color:#1a1a1a;}
+</style>
+""", unsafe_allow_html=True)
 
-elif choice=="Contact":
-    st.markdown('<div class="card"><h2>Contact Us</h2><p>Email: contact@thrivewellness.com | Phone: +254700000000</p><p>Clinic Address: Nairobi, Kenya</p></div>',unsafe_allow_html=True)
+# ---------------- Session State ----------------
+if "logged_in" not in st.session_state: st.session_state.logged_in = False
+if "user" not in st.session_state: st.session_state.user = None
 
-elif choice=="Staff Profiles":
-    st.markdown('<div class="card"><h2>Our Staff</h2><p>Cecilia Wamburu PMHNP-BC</p></div>',unsafe_allow_html=True)
+# ---------------- Authentication ----------------
+def login():
+    st.subheader("Login")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        user = get_user(email)
+        if user and check_password(password, user[3]):
+            st.session_state.logged_in = True
+            st.session_state.user = user
+            st.success(f"Welcome, {user[1]}!")
+            st.experimental_rerun()
+        else:
+            st.error("Invalid email or password.")
 
-elif choice=="Login/Register":
-    tab1, tab2 = st.tabs(["Login","Register"])
-    with tab1:
-        email=st.text_input("Email", key="login_email")
-        password=st.text_input("Password",type="password", key="login_password")
-        if st.button("Login", key="login_btn"):
-            user=login_user(email,password)
-            if user: st.session_state['user']=user; st.success(f"Welcome {user[1]}! Role: {user[4]}")
-            else: st.error("Invalid credentials")
-    with tab2:
-        name_reg=st.text_input("Full Name", key="reg_name")
-        email_reg=st.text_input("Email", key="reg_email")
-        password_reg=st.text_input("Password",type="password", key="reg_password")
-        role_reg=st.selectbox("Role",["patient","staff","admin"], key="reg_role")
-        if st.button("Register", key="reg_btn"):
-            if register_user(name_reg,email_reg,password_reg,role_reg):
-                st.success("Registration successful!")
-            else: st.error("Email already exists!")
+def register():
+    st.subheader("Register")
+    name = st.text_input("Full Name")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    role = st.selectbox("Role", ["Patient", "Staff", "Admin"])
+    if st.button("Register"):
+        if register_user(name, email, password, role):
+            st.success("Registration successful! You can login now.")
+        else:
+            st.error("Email already exists.")
 
-# ---------- Dashboard / Logged-in Users ----------
-if 'user' in st.session_state:
-    user=st.session_state['user']
-    st.markdown(f'<div class="card"><h2>Dashboard | {user[4].capitalize()}</h2><p>Welcome {user[1]}</p></div>',unsafe_allow_html=True)
+# ---------------- Public Pages ----------------
+def home_page():
+    st.header("Welcome to Thrive Wellness Hospital")
+    st.subheader("Your mental health matters")
+    st.write("Services: Medication Management, Psychotherapy (Individual, Group, Family)")
+    st.button("Book Appointment")
+    st.button("Contact Us")
+    st.markdown("**Featured Staff:** Cecilia Wamburu PMHNP-BC")
+    st.markdown("**Testimonials / Success Stories**: Patient A, Patient B")
+    st.markdown("Follow us on [Facebook](#) | [Twitter](#) | [Instagram](#)")
 
-    # --- Patient Dashboard ---
-    if user[4]=="patient":
-        tab1, tab2, tab3 = st.tabs(["Appointments","Reports","Payments"])
-        with tab1:
-            st.markdown('<h3>Book Appointment</h3>',unsafe_allow_html=True)
-            service=st.selectbox("Service",["Medication Management","Psychotherapy"], key="patient_service")
-            date=st.date_input("Date", key="patient_date")
-            time=st.text_input("Time", key="patient_time")
-            tele=st.selectbox("Telehealth?",["Yes","No"], key="patient_tele")
-            if st.button("Book Appointment", key="patient_book"):
-                create_appointment(user[0],service,str(date),time,telehealth=tele)
-                st.success("Appointment booked!")
-            st.markdown('<h3>My Appointments</h3>',unsafe_allow_html=True)
-            apps=get_user_appointments(user[0])
-            for a in apps:
-                st.info(f"{a[3]} on {a[4]} at {a[5]} | Telehealth: {a[6]} | Status: {a[7]} | Payment: {a[8]}", icon="📅")
+def about_us():
+    st.header("About Us")
+    st.write("Our mission: Provide compassionate mental health care")
+    st.write("Clinic Certifications: XYZ, ABC")
+    st.write("Staff bios, photos, awards...")
 
-        with tab2:
-            st.markdown('<h3>My Reports</h3>',unsafe_allow_html=True)
-            reports=get_patient_reports(user[0])
-            for r in reports:
-                st.info(f"Date: {r[3]} | Symptoms: {r[4]} | Diagnosis: {r[5]} | Treatment: {r[6]} | Prescriptions: {r[7]}", icon="📝")
+def services_page():
+    st.header("Services")
+    st.write("Medication Management, Psychotherapy (Individual, Group, Family), Telehealth")
 
-        with tab3:
-            st.markdown('<h3>Payments</h3>',unsafe_allow_html=True)
-            for a in apps:
-                status=a[8]
-                if status=="Unpaid" and st.button(f"Mark Paid for {a[3]}", key=f"pay_{a[0]}"):
-                    mark_payment(a[0],"Paid")
-                    st.success("Payment updated!")
+def contact_page():
+    st.header("Contact Us")
+    st.write("Address: 123 Wellness St, Nairobi")
+    st.write("Phone: +254 700 000000")
+    st.write("Email: contact@thrivehospital.com")
+    st.text_area("Send us a message")
+    st.button("Submit")
 
-    # --- Staff Dashboard ---
-    elif user[4]=="staff":
-        tab1,tab2,tab3=st.tabs(["My Patients","Reports","Appointments"])
-        with tab1:
-            st.markdown('<h3>Assigned Patients</h3>',unsafe_allow_html=True)
-            apps=get_all_appointments()
-            for a in apps:
-                if a[2]==user[1] or a[2]==None:
-                    st.info(f"Patient: {a[1]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]}", icon="🧑‍⚕️")
-        with tab2:
-            st.markdown('<h3>Create Reports</h3>',unsafe_allow_html=True)
-            c.execute("SELECT id,name FROM users WHERE role='patient'"); patients=c.fetchall()
-            patient_select=st.selectbox("Select Patient",[f"{p[1]}|{p[0]}" for p in patients], key="staff_patient")
-            symptoms=st.text_area("Symptoms", key="staff_symptoms")
-            diagnosis=st.text_area("Diagnosis", key="staff_diagnosis")
-            treatment=st.text_area("Treatment", key="staff_treatment")
-            prescriptions=st.text_area("Prescriptions", key="staff_prescriptions")
-            date=datetime.today()
-            if st.button("Submit Report", key="staff_submit_report"):
-                pid=int(patient_select.split("|")[1])
-                submit_report(pid,user[0],str(date),symptoms,diagnosis,treatment,prescriptions)
-                st.success("Report submitted!")
+# ----------------- Main App -----------------
+if not st.session_state.logged_in:
+    tabs = st.tabs(["Home", "Login", "Register"])
+    with tabs[0]:
+        home_page()
+    with tabs[1]:
+        login()
+    with tabs[2]:
+        register()
+else:
+    user = st.session_state.user
+    st.sidebar.image(user[7], width=100)
+    st.sidebar.write(f"**{user[1]}**")
+    st.sidebar.write(f"Role: {user[4]}")
+    st.sidebar.write(f"Bio: {user[5]}")
+    st.sidebar.write(f"Phone: {user[6]}")
 
-        with tab3:
-            st.markdown('<h3>Appointments</h3>',unsafe_allow_html=True)
-            apps=get_all_appointments()
-            for a in apps:
-                if a[2]==user[1]:
-                    st.info(f"Patient: {a[1]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]}", icon="📅")
+    # Sidebar menu
+    menu_items = ["Dashboard", "Profile", "Patient Reports", "Appointments", "Book Appointment", "Logout"]
+    page = st.sidebar.selectbox("Menu", menu_items)
 
-    # --- Admin Dashboard ---
-    elif user[4]=="admin":
-        tab1,tab2,tab3,tab4=st.tabs(["Users","Appointments","Reports","Analytics"])
-        with tab1:
-            st.markdown('<h3>Manage Users</h3>',unsafe_allow_html=True)
-            c.execute("SELECT id,name,email,role FROM users"); users=c.fetchall()
-            for u in users: st.info(f"{u[1]} | {u[2]} | Role: {u[3]}", icon="🧑‍⚕️")
-        with tab2:
-            st.markdown('<h3>Appointments Management</h3>',unsafe_allow_html=True)
-            apps=get_all_appointments()
-            for a in apps:
-                st.info(f"Patient: {a[1]} | Staff: {a[2]} | Service: {a[3]} | Date: {a[4]} | Status: {a[7]} | Payment: {a[8]}")
-                cols=st.columns(2)
-                if cols[0].button(f"Approve {a[0]}", key=f"admin_approve_{a[0]}"): update_appointment_status(a[0],"Approved"); st.success("Approved")
-                if cols[1].button(f"Cancel {a[0]}", key=f"admin_cancel_{a[0]}"): update_appointment_status(a[0],"Canceled"); st.error("Canceled")
-        with tab3:
-            st.markdown('<h3>Reports</h3>',unsafe_allow_html=True)
-            reports=get_all_reports()
-            for r in reports:
-                st.info(f"Patient: {r[1]} | Staff: {r[2]} | Date: {r[3]} | Diagnosis: {r[5]} | Treatment: {r[6]}")
-        with tab4:
-            st.markdown('<h3>Analytics</h3>',unsafe_allow_html=True)
-            total_patients,total_staff,total_apps,pending,approved,canceled=get_kpi()
-            df=pd.DataFrame({
-                "Category":["Total Patients","Total Staff","Total Appointments","Pending","Approved","Canceled"],
-                "Count":[total_patients,total_staff,total_apps,pending,approved,canceled]
-            })
-            fig=px.bar(df,x="Category",y="Count",color="Category",title="Hospital Overview")
-            st.plotly_chart(fig,use_container_width=True)
+    if page == "Logout":
+        st.session_state.logged_in = False
+        st.session_state.user = None
+        st.experimental_rerun()
 
-    # --- Logout ---
-    if st.button("Logout", key="logout_btn"):
-        st.session_state.pop("user")
-        st.success("Logged out successfully!")
+    # ---------------- Profile ----------------
+    elif page == "Profile":
+        st.header("Edit Profile")
+        name = st.text_input("Name", value=user[1])
+        bio = st.text_area("Bio", value=user[5] if user[5] else "")
+        phone = st.text_input("Phone", value=user[6] if user[6] else "")
+        avatar_file = st.file_uploader("Upload Avatar", type=["png","jpg","jpeg"])
+        avatar_url = user[7]
+
+        if avatar_file:
+            avatar_path = f"avatars/{user[1].replace(' ','_')}.png"
+            os.makedirs("avatars", exist_ok=True)
+            with open(avatar_path, "wb") as f:
+                f.write(avatar_file.getbuffer())
+            avatar_url = avatar_path
+
+        if st.button("Update Profile"):
+            update_profile(user[0], name, bio, phone, avatar_url)
+            st.success("Profile updated! Reload page.")
+            st.session_state.user = get_user(user[2])
+
+    # ---------------- Dashboard ----------------
+    elif page == "Dashboard":
+        st.header("Dashboard")
+        total_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        total_reports = c.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+        total_appointments = c.execute("SELECT COUNT(*) FROM appointments").fetchone()[0]
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Users", total_users)
+        col2.metric("Total Reports", total_reports)
+        col3.metric("Total Appointments", total_appointments)
+        st.write("Quick overview of system stats")
+
+    # ---------------- Patient Reports ----------------
+    elif page == "Patient Reports":
+        st.header("Patient Reports")
+        if user[4] in ["Admin", "Staff"]:
+            st.subheader("Add Report")
+            patient_name = st.text_input("Patient Name")
+            treatment = st.text_input("Treatment")
+            solution = st.text_input("Solution")
+            if st.button("Create Report"):
+                create_report(patient_name, treatment, solution, user[1], user[7])
+                st.success("Report added successfully!")
+        st.subheader("All Reports")
+        reports = get_reports()
+        for r in reports:
+            col1, col2 = st.columns([1,5])
+            with col1:
+                if os.path.exists(r[5]):
+                    st.image(r[5], width=50)
+                else:
+                    st.image(r[5], width=50)
+            with col2:
+                st.markdown(f"**Patient:** {r[1]}  \n**Treatment:** {r[2]}  \n**Solution:** {r[3]}  \n**By:** {r[4]}  \n**At:** {r[6]}")
+            st.markdown("---")
+
+    # ---------------- Appointments ----------------
+    elif page == "Appointments":
+        st.header("Appointments")
+        appointments = get_appointments()
+        for a in appointments:
+            st.markdown(f"**Patient:** {a[1]} | **Service:** {a[2]} | **Date:** {a[3]} | **Time:** {a[4]} | **Provider:** {a[5]} | **Telehealth:** {a[6]} | **Status:** {a[7]}")
+
+    # ---------------- Book Appointment ----------------
+    elif page == "Book Appointment":
+        st.header("Book Appointment")
+        patient_name = st.text_input("Your Name")
+        service = st.selectbox("Service", ["Medication Management","Psychotherapy"])
+        date = st.date_input("Select Date")
+        time = st.time_input("Select Time")
+        provider = st.selectbox("Provider", ["Cecilia Wamburu PMHNP-BC","John Doe Therapist"])
+        telehealth = st.checkbox("Telehealth / Online")
+        if st.button("Book"):
+            create_appointment(patient_name, service, str(date), str(time), provider, telehealth, user[1])
+            st.success("Appointment booked successfully! Confirmation sent (simulated)")
+
