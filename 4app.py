@@ -3,474 +3,360 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-from io import BytesIO
 
-# -----------------------
-# Basic setup & styling
-# -----------------------
+# ---------------- Settings / Files ----------------
 st.set_page_config(page_title="Thrive Mental Wellness Portal", layout="wide")
-
-st.markdown("""
-<style>
-/* Full-page background */
-[data-testid="stAppViewContainer"] { 
-    background: linear-gradient(135deg, #e8f6ff 0%, #c6f0ee 100%);
-    color: #003366;
-    font-family: 'Lato', sans-serif;
-}
-
-/* Hero section */
-.hero {
-    background-image: url('https://via.placeholder.com/1400x420?text=Thrive+Mental+Wellness');
-    background-size: cover;
-    background-position: center;
-    padding: 64px 24px;
-    border-radius: 12px;
-    color: white;
-    text-align: center;
-}
-
-/* Cards for sections */
-.card { 
-    background-color: white; 
-    padding:18px; 
-    border-radius:12px; 
-    box-shadow:2px 2px 12px rgba(0,0,0,0.12); 
-    margin-bottom:18px; 
-    transition: transform 0.18s; 
-}
-.card:hover { transform: scale(1.02); }
-
-/* Buttons */
-button, .stButton>button { 
-    background: linear-gradient(90deg,#0072E3,#00BFFF); 
-    color:white; padding:8px 18px; border-radius:10px; border:none; font-weight:600; 
-}
-button:hover, .stButton>button:hover { opacity:0.95; transform: translateY(-1px); }
-
-/* Inputs */
-.stTextInput>div>div>input, 
-.stTextArea>div>div>textarea, 
-.stSelectbox>div>div>div>select {
-    border-radius:10px; border:1px solid #0072E3; padding:6px;
-}
-
-/* Sidebar */
-[data-testid="stSidebar"] { background: #bfeff2; }
-
-/* Footer */
-.footer { text-align:center; padding:14px; font-size:13px; color:#003366; margin-top:18px; }
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------
-# Ensure uploads folder exists
-# -----------------------
+USERS_FILE = "users.csv"
+APPTS_FILE = "appointments.csv"
+PROFILES_FILE = "profiles.csv"
 UPLOAD_DIR = "uploads"
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# -----------------------
-# Session state defaults
-# -----------------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.role = None
-    st.session_state.user_email = None
-    st.session_state.staff_index = 0
-    st.session_state.logout_trigger = False
+# Ensure upload directory
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# -----------------------
-# Users persistence (users.csv)
-# -----------------------
-USERS_CSV = "users.csv"
+# ---------------- Helpers: Init & CSV ----------------
+def init_files():
+    if not os.path.exists(USERS_FILE):
+        df = pd.DataFrame([
+            {"email":"admin@thrivewellness.com","password":"Admin123!","role":"Admin"},
+            {"email":"staff1@thrivewellness.com","password":"Staff123!","role":"Staff"},
+            {"email":"staff2@thrivewellness.com","password":"Staff123!","role":"Staff"},
+        ])
+        df.to_csv(USERS_FILE, index=False)
+    if not os.path.exists(APPTS_FILE):
+        df = pd.DataFrame(columns=["patient","doctor","date","time","reason","created_by"])
+        df.to_csv(APPTS_FILE, index=False)
+    if not os.path.exists(PROFILES_FILE):
+        df = pd.DataFrame(columns=["email","name","specialty","bio","photopath"])
+        df.to_csv(PROFILES_FILE, index=False)
 
-def load_users():
-    pre_populated = [
-        {"Email":"admin@thrivewellness.com","Password":"Admin123!","Role":"Admin"},
-        {"Email":"staff1@thrivewellness.com","Password":"Staff123!","Role":"Staff"},
-        {"Email":"staff2@thrivewellness.com","Password":"Staff123!","Role":"Staff"}
-    ]
-    if os.path.exists(USERS_CSV):
-        df = pd.read_csv(USERS_CSV)
-    else:
-        df = pd.DataFrame(pre_populated)
-        df.to_csv(USERS_CSV, index=False)
-    return {row["Email"]: {"password": row["Password"], "role": row["Role"]} for _, row in df.iterrows()}
+def load_users_df():
+    return pd.read_csv(USERS_FILE)
 
-def save_user(email, password, role):
-    new_df = pd.DataFrame([{"Email": email, "Password": password, "Role": role}])
-    if os.path.exists(USERS_CSV):
-        new_df.to_csv(USERS_CSV, mode='a', header=False, index=False)
-    else:
-        new_df.to_csv(USERS_CSV, index=False)
+def save_user_to_csv(email, password, role):
+    df = load_users_df()
+    df = df.append({"email":email,"password":password,"role":role}, ignore_index=True)
+    df.to_csv(USERS_FILE, index=False)
 
-users_db = load_users()
+def load_appts_df():
+    return pd.read_csv(APPTS_FILE)
 
-# -----------------------
-# Staff Profiles persistence (staff_profiles.csv)
-# -----------------------
-PROFILES_CSV = "staff_profiles.csv"
+def save_appts_df(df):
+    df.to_csv(APPTS_FILE, index=False)
 
-def load_profiles():
-    if os.path.exists(PROFILES_CSV):
-        return pd.read_csv(PROFILES_CSV)
-    else:
-        df = pd.DataFrame(columns=["Email","Name","Role","Bio","PhotoPath"])
-        df.to_csv(PROFILES_CSV, index=False)
-        return df
+def load_profiles_df():
+    return pd.read_csv(PROFILES_FILE)
 
-def save_profiles(df):
-    df.to_csv(PROFILES_CSV, index=False)
+def save_profiles_df(df):
+    df.to_csv(PROFILES_FILE, index=False)
 
-# -----------------------
-# Appointments persistence
-# -----------------------
-APPTS_CSV = "appointments.csv"
-
-def load_appointments():
-    if os.path.exists(APPTS_CSV):
-        df = pd.read_csv(APPTS_CSV)
-        # ensure Date column is consistent
-        if "Date" in df.columns:
-            df["Date"] = pd.to_datetime(df["Date"]).dt.date
-        return df
-    else:
-        cols = ["Name","Email","Phone","Service","Date","Notes","SubmittedAt","Status","AssignedTo"]
-        df = pd.DataFrame(columns=cols)
-        df.to_csv(APPTS_CSV, index=False)
-        return df
-
-def save_appointments(df):
-    df.to_csv(APPTS_CSV, index=False)
-
-# -----------------------
-# Authentication
-# -----------------------
-def authenticate_user(email, password):
+# ---------------- Authentication ----------------
+def register_user(email, password, role):
     if not email.endswith("@thrivewellness.com"):
-        return None
-    if email in users_db and users_db[email]["password"] == password:
-        return users_db[email]["role"]
+        st.error("❌ Please use your official hospital email: @thrivewellness.com")
+        return False
+    users = load_users_df()
+    if email in users['email'].values:
+        st.error("⚠️ Email already registered.")
+        return False
+    save_user_to_csv(email, password, role)
+    st.success("✅ Registered. Please log in.")
+    return True
+
+def validate_user(email, password):
+    users = load_users_df()
+    row = users[(users['email']==email) & (users['password']==password)]
+    if not row.empty:
+        return row.iloc[0]['role']
     return None
 
-def logout_user():
-    # reset session and trigger rerun outside callback
-    st.session_state.logged_in = False
-    st.session_state.role = None
-    st.session_state.user_email = None
-    st.session_state.logout_trigger = True
-
-# -----------------------
-# Register
-# -----------------------
-def register_user_ui():
-    st.subheader("Register New User (Official Email Only)")
-    new_email = st.text_input("Email", key="reg_email")
-    new_password = st.text_input("Password", type="password", key="reg_password")
-    role = st.selectbox("Role", ["Admin", "Staff"], key="reg_role")
-    if st.button("Register", key="reg_btn"):
-        if not new_email.endswith("@thrivewellness.com"):
-            st.error("Please use your official hospital email: @thrivewellness.com")
-            return
-        if new_email.strip() == "" or new_password.strip() == "":
-            st.error("Please provide both email and password")
-            return
-        if new_email in users_db:
-            st.error("User already exists")
-            return
-        users_db[new_email] = {"password": new_password, "role": role}
-        save_user(new_email, new_password, role)
-        st.success(f"{role} registered successfully. Now login from the Login tab.")
-
-# -----------------------
-# Helper: save profile image bytes to a file and return path
-# -----------------------
-def save_profile_image(email, uploaded_file):
+# ---------------- Utility: save uploaded photo ----------------
+def save_uploaded_photo(email, uploaded_file):
     if uploaded_file is None:
         return ""
-    ext = os.path.splitext(uploaded_file.name)[1].lower()
-    safe_name = email.replace("@", "_at_")
-    filename = f"{safe_name}{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    # write bytes
-    with open(filepath, "wb") as f:
-        f.write(uploaded_file.read())
-    return filepath
+    ext = os.path.splitext(uploaded_file.name)[1]
+    safe = email.replace("@", "_at_")
+    filename = f"{safe}{ext}"
+    path = os.path.join(UPLOAD_DIR, filename)
+    with open(path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    return path
 
-# -----------------------
-# Admin: create/update profile UI (admin-only)
-# -----------------------
-def admin_profile_management():
-    st.markdown("<h2>Manage Staff & Admin Profiles</h2>", unsafe_allow_html=True)
-    profiles_df = load_profiles()
+# ---------------- Appointments CRUD ----------------
+def add_appointment(patient, doctor, date, time, reason, created_by):
+    df = load_appts_df()
+    df = df.append({
+        "patient": patient,
+        "doctor": doctor,
+        "date": str(date),
+        "time": str(time),
+        "reason": reason,
+        "created_by": created_by
+    }, ignore_index=True)
+    save_appts_df(df)
+    st.success("✅ Appointment saved.")
 
-    col1, col2 = st.columns([2,1])
+def rewrite_appointments(list_of_rows):
+    cols = ["patient","doctor","date","time","reason","created_by"]
+    df = pd.DataFrame(list_of_rows, columns=cols)
+    save_appts_df(df)
+
+# ---------------- Appointment Manager with Filters & Permissions ----------------
+def manage_appointments_ui(user_role, user_email):
+    st.subheader("🔍 Appointments — Search / Filter / Manage")
+    df_all = load_appts_df()
+    if df_all.empty:
+        st.info("No appointments found.")
+        return
+
+    # Filters
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("#### Create / Update Profile")
-        email = st.text_input("Official Email (must end with @thrivewellness.com)", key="profile_email")
-        name = st.text_input("Full Name", key="profile_name")
-        role = st.selectbox("Role", ["Admin", "Staff"], key="profile_role")
-        bio = st.text_area("Short Bio", key="profile_bio")
-        uploaded_file = st.file_uploader("Upload Profile Photo (png/jpg)", type=["png","jpg","jpeg"], key="profile_photo_uploader")
-        if st.button("Save Profile"):
-            if not email.endswith("@thrivewellness.com"):
-                st.error("Profile email must be an official hospital email.")
-            elif email.strip() == "" or name.strip() == "":
-                st.error("Please provide email and name.")
-            else:
-                photo_path = ""
-                if uploaded_file is not None:
-                    photo_path = save_profile_image(email, uploaded_file)
-                # if profile exists, update it
-                if email in list(profiles_df["Email"].astype(str)):
-                    idx = profiles_df.index[profiles_df["Email"]==email][0]
-                    profiles_df.at[idx, "Name"] = name
-                    profiles_df.at[idx, "Role"] = role
-                    profiles_df.at[idx, "Bio"] = bio
-                    if photo_path:
-                        profiles_df.at[idx, "PhotoPath"] = photo_path
-                else:
-                    new_row = {"Email":email, "Name":name, "Role":role, "Bio":bio, "PhotoPath":photo_path}
-                    profiles_df = profiles_df.append(new_row, ignore_index=True)
-                save_profiles(profiles_df)
-                st.success("Profile saved/updated.")
+        search_patient = st.text_input("Patient name filter", key="filter_patient")
     with col2:
-        st.markdown("#### Existing Profiles")
-        if profiles_df.empty:
-            st.info("No profiles yet.")
-        else:
-            for _, row in profiles_df.iterrows():
-                ph = row["PhotoPath"] if pd.notna(row["PhotoPath"]) and row["PhotoPath"]!="" else "https://via.placeholder.com/120x120?text=Photo"
-                st.image(ph, width=80)
-                st.write(f"**{row['Name']}** — {row['Role']}")
-                st.write(row["Email"])
-                st.write(row["Bio"])
-                st.write("---")
+        search_doctor = st.text_input("Doctor name filter", key="filter_doctor")
+    with col3:
+        filter_date = st.date_input("Filter by date (optional)", key="filter_date")
 
-# -----------------------
-# Staff: edit own profile UI
-# -----------------------
-def staff_profile_editor():
-    profiles_df = load_profiles()
-    email = st.session_state.user_email
-    st.markdown("### Your Profile")
-    existing = profiles_df[profiles_df["Email"]==email]
+    # Build filtered list of appointment dicts and track original indices
+    filtered = []
+    for idx, row in df_all.iterrows():
+        # permission: staff sees only their created appts
+        if user_role != "Admin" and row["created_by"] != user_email:
+            continue
+        if search_patient and search_patient.lower() not in str(row["patient"]).lower():
+            continue
+        if search_doctor and search_doctor.lower() not in str(row["doctor"]).lower():
+            continue
+        if filter_date:
+            if str(filter_date) != str(row["date"]):
+                continue
+        filtered.append((idx, row.tolist()))  # (original_index, row_list)
+
+    if not filtered:
+        st.warning("No appointments match the filters.")
+        return
+
+    # Show and allow edit/delete per appointment (unique widget keys)
+    for display_i, (orig_idx, row_list) in enumerate(filtered):
+        patient, doctor, date, time, reason, created_by = row_list
+        exp_label = f"{patient} — Dr. {doctor} on {date} at {time}"
+        with st.expander(f"📌 {exp_label}"):
+            st.write(f"**Reason:** {reason}")
+            st.write(f"📧 Created by: {created_by}")
+            # editable fields with unique keys
+            new_patient = st.text_input(f"Patient name {display_i}", value=patient, key=f"np_{orig_idx}")
+            new_doctor = st.text_input(f"Doctor {display_i}", value=doctor, key=f"nd_{orig_idx}")
+            new_date = st.text_input(f"Date {display_i}", value=date, key=f"dt_{orig_idx}")
+            new_time = st.text_input(f"Time {display_i}", value=time, key=f"tm_{orig_idx}")
+            new_reason = st.text_area(f"Reason {display_i}", value=reason, key=f"nr_{orig_idx}")
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button(f"💾 Save {orig_idx}", key=f"save_{orig_idx}"):
+                    df = load_appts_df()
+                    df.at[orig_idx, "patient"] = new_patient
+                    df.at[orig_idx, "doctor"] = new_doctor
+                    df.at[orig_idx, "date"] = new_date
+                    df.at[orig_idx, "time"] = new_time
+                    df.at[orig_idx, "reason"] = new_reason
+                    save_appts_df(df)
+                    st.success("✅ Appointment updated.")
+            with col_b:
+                if st.button(f"🗑️ Delete {orig_idx}", key=f"del_{orig_idx}"):
+                    df = load_appts_df()
+                    df = df.drop(index=orig_idx).reset_index(drop=True)
+                    save_appts_df(df)
+                    st.warning("🗑️ Appointment deleted.")
+
+    # Admin: export filtered results
+    if user_role == "Admin":
+        cols = ["patient","doctor","date","time","reason","created_by"]
+        export_df = pd.DataFrame([r for _, r in filtered], columns=cols)
+        csv = export_df.to_csv(index=False)
+        st.download_button("⬇️ Download filtered results as CSV", csv, "appointments_filtered.csv", mime="text/csv")
+
+# ---------------- Profile Management ----------------
+def profile_display_and_edit_ui(user_email, is_admin=False):
+    st.subheader("👤 My Profile")
+    profiles = load_profiles_df()
+    existing = profiles[profiles['email'] == user_email]
     if not existing.empty:
         row = existing.iloc[0]
-        st.image(row["PhotoPath"] if pd.notna(row["PhotoPath"]) and row["PhotoPath"]!="" else "https://via.placeholder.com/150?text=Photo", width=140)
-        name = st.text_input("Full name", value=row["Name"], key="self_name")
-        bio = st.text_area("Bio", value=row["Bio"], key="self_bio")
-    else:
-        name = st.text_input("Full name", key="self_name")
-        bio = st.text_area("Bio", key="self_bio")
-    uploaded_file = st.file_uploader("Upload profile photo", type=["png","jpg","jpeg"], key="self_photo")
-    if st.button("Save My Profile"):
-        profiles_df = load_profiles()
-        photo_path = ""
-        if uploaded_file is not None:
-            photo_path = save_profile_image(email, uploaded_file)
-        if email in list(profiles_df["Email"].astype(str)):
-            idx = profiles_df.index[profiles_df["Email"]==email][0]
-            profiles_df.at[idx, "Name"] = name
-            profiles_df.at[idx, "Bio"] = bio
-            if photo_path:
-                profiles_df.at[idx, "PhotoPath"] = photo_path
+        photopath = row.get("photopath", "")
+        if isinstance(photopath, str) and photopath and os.path.exists(photopath):
+            st.image(photopath, width=140)
         else:
-            new_row = {"Email":email, "Name":name, "Role":st.session_state.role, "Bio":bio, "PhotoPath":photo_path}
-            profiles_df = profiles_df.append(new_row, ignore_index=True)
-        save_profiles(profiles_df)
-        st.success("Profile updated.")
-
-# -----------------------
-# Booking UI
-# -----------------------
-def book_appointment_ui():
-    st.header("Book Appointment")
-    with st.form("book_form", clear_on_submit=True):
-        name = st.text_input("Full Name")
-        email = st.text_input("Email")
-        phone = st.text_input("Phone")
-        service = st.selectbox("Service", ["Medication Management", "Psychotherapy"])
-        date_time = st.date_input("Preferred Date")
-        notes = st.text_area("Additional Notes")
-        submitted = st.form_submit_button("Submit Appointment")
-        if submitted:
-            assigned_staff = assign_staff()
-            submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            df = load_appointments()
-            new_row = {"Name":name,"Email":email,"Phone":phone,"Service":service,"Date":str(date_time),
-                       "Notes":notes,"SubmittedAt":submitted_at,"Status":"Pending","AssignedTo":assigned_staff}
-            df = df.append(new_row, ignore_index=True)
-            save_appointments(df)
-            st.success(f"Appointment submitted! Assigned to: {assigned_staff}")
-            st.info("Telehealth link placeholder: https://example.com/telehealth")
-
-# -----------------------
-# Dashboard (Admin & Staff)
-# -----------------------
-def dashboard_ui():
-    st.header(f"{'Admin' if st.session_state.role=='Admin' else 'Staff'} Dashboard")
-    appts = load_appointments()
-    # Admin sees all, staff sees their assigned
-    if st.session_state.role == "Staff":
-        appts = appts[appts["AssignedTo"]==st.session_state.user_email]
-
-    # Top stats (bigger for Admin)
-    col1, col2, col3, col4 = st.columns([2,1,1,1])
-    total_appts = len(load_appointments())
-    total_staff = sum(1 for v in users_db.values() if v["role"]=="Staff")
-    recorded_notes = sum(load_appointments()["Status"]=="Recorded") if not load_appointments().empty else 0
-
-    col1.metric("Total Appointments", total_appts)
-    col2.metric("Total Staff", total_staff)
-    col3.metric("Recorded Notes", recorded_notes)
-    col4.metric("Your Role", st.session_state.role)
-
-    # Appointments table and management
-    st.subheader("Appointments")
-    if appts.empty:
-        st.info("No appointments found.")
+            st.image("https://via.placeholder.com/140x140?text=No+Photo", width=140)
+        name = st.text_input("Full name", value=row.get("name",""), key="p_name")
+        specialty = st.text_input("Specialty", value=row.get("specialty",""), key="p_spec")
+        bio = st.text_area("Short bio", value=row.get("bio",""), key="p_bio")
     else:
-        # show table
-        st.dataframe(appts.sort_values(by="Date", ascending=True).reset_index(drop=True))
-        if st.session_state.role == "Admin":
-            st.markdown("**Admin Tools**")
-            # simple controls to update status or reassign
-            with st.form("admin_update_form"):
-                sel_email = st.text_input("Select patient name to update (exact match)", key="admin_sel_name")
-                new_status = st.selectbox("New Status", ["Pending","Completed","Recorded"], key="admin_status")
-                reassign_to = st.selectbox("Assign to staff (leave blank to skip)", [""] + [e for e,r in users_db.items() if r["role"]=="Staff"], key="admin_assign")
-                do_update = st.form_submit_button("Apply Update")
-                if do_update:
-                    df_all = load_appointments()
-                    mask = df_all["Name"] == sel_email
-                    if mask.any():
-                        if new_status:
-                            df_all.loc[mask, "Status"] = new_status
-                        if reassign_to:
-                            df_all.loc[mask, "AssignedTo"] = reassign_to
-                        save_appointments(df_all)
-                        st.success("Update applied.")
-                    else:
-                        st.error("No appointment found with that patient name.")
+        name = st.text_input("Full name", key="p_name")
+        specialty = st.text_input("Specialty", key="p_spec")
+        bio = st.text_area("Short bio", key="p_bio")
+        photopath = ""
 
-    # Record patient info (both staff and admin)
-    st.subheader("Record Patient Information")
-    with st.form("record_patient_form", clear_on_submit=True):
-        patient_name = st.text_input("Patient Name")
-        patient_notes = st.text_area("Notes / Illness / Treatment")
-        submit_notes = st.form_submit_button("Save Patient Notes")
-        if submit_notes:
-            if patient_name.strip() == "":
-                st.error("Please enter patient name")
-            else:
-                df_all = load_appointments()
-                new_row = {"Name":patient_name,"Email":"","Phone":"","Service":"","Date":str(datetime.today().date()),
-                           "Notes":patient_notes,"SubmittedAt":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                           "Status":"Recorded","AssignedTo":st.session_state.user_email}
-                df_all = df_all.append(new_row, ignore_index=True)
-                save_appointments(df_all)
-                st.success("Patient information recorded.")
+    uploaded = st.file_uploader("Upload profile photo (png/jpg)", type=["png","jpg","jpeg"], key="p_upload")
+    if st.button("Save Profile"):
+        profiles = load_profiles_df()
+        photo_path = photopath
+        if uploaded is not None:
+            photo_path = save_uploaded_photo(user_email, uploaded)
+        if not existing.empty:
+            idx = existing.index[0]
+            profiles.loc[idx, "name"] = name
+            profiles.loc[idx, "specialty"] = specialty
+            profiles.loc[idx, "bio"] = bio
+            profiles.loc[idx, "photopath"] = photo_path
+        else:
+            profiles = profiles.append({
+                "email": user_email,
+                "name": name,
+                "specialty": specialty,
+                "bio": bio,
+                "photopath": photo_path
+            }, ignore_index=True)
+        save_profiles_df(profiles)
+        st.success("✅ Profile saved.")
 
-    # Admin analytics (simple charts)
-    if st.session_state.role == "Admin":
-        st.subheader("Analytics")
-        df_all = load_appointments()
-        if not df_all.empty:
-            try:
-                df_all["Date"] = pd.to_datetime(df_all["Date"]).dt.date
-            except Exception:
-                pass
-            svc_counts = df_all["Service"].value_counts()
-            st.bar_chart(svc_counts)
-            # time series: appointments per day
-            time_series = df_all.groupby("Date").size()
-            if not time_series.empty:
-                st.line_chart(time_series)
+    # Admin: see all staff profiles
+    if is_admin:
+        st.markdown("---")
+        st.subheader("All Staff Profiles (Admin View)")
+        profiles = load_profiles_df()
+        if profiles.empty:
+            st.info("No profiles yet.")
+        else:
+            for _, r in profiles.iterrows():
+                p_photo = r["photopath"] if isinstance(r["photopath"], str) and r["photopath"] and os.path.exists(r["photopath"]) else "https://via.placeholder.com/100?text=Photo"
+                c1, c2 = st.columns([1,4])
+                with c1:
+                    st.image(p_photo, width=80)
+                with c2:
+                    st.markdown(f"**{r['name']}** — {r['specialty']}")
+                    st.write(r['email'])
+                    st.write(r['bio'])
+                    st.markdown("---")
 
-    # Profile editor
-    st.subheader("Profile")
-    if st.session_state.role == "Admin":
-        admin_profile_management()
-    else:
-        staff_profile_editor()
+# ---------------- UI: Login / Register / Logout ----------------
+def login_ui():
+    st.title("🔐 Thrive Mental Wellness Portal — Login")
+    email = st.text_input("Official email", placeholder="yourname@thrivewellness.com", key="login_email")
+    password = st.text_input("Password", type="password", key="login_password")
+    if st.button("Login"):
+        role = validate_user(email, password)
+        if role:
+            st.session_state.logged_in = True
+            st.session_state.email = email
+            st.session_state.role = role
+            st.session_state.login_flag = True  # trigger a rerun in main
+            st.success("✅ Login successful.")
+        else:
+            st.error("❌ Invalid credentials or not an official hospital email.")
 
-# -----------------------
-# Main layout & routing
-# -----------------------
+def register_ui():
+    st.title("📝 Register New Account")
+    email = st.text_input("Official email", placeholder="yourname@thrivewellness.com", key="reg_email")
+    password = st.text_input("Password", type="password", key="reg_password")
+    role = st.selectbox("Role", ["Staff","Admin"], key="reg_role")
+    if st.button("Register"):
+        register_user(email, password, role)
+
+def logout_action():
+    st.session_state.logged_in = False
+    st.session_state.email = None
+    st.session_state.role = None
+    st.session_state.logout_flag = True
+
+# ---------------- Dashboards ----------------
+def admin_dashboard():
+    st.title("🏥 Admin Dashboard — Thrive Mental Wellness")
+    st.sidebar.markdown(f"**Logged in:** {st.session_state.email} (Admin)")
+    if st.sidebar.button("Logout"):
+        logout_action()
+    # big admin area
+    col1, col2 = st.columns([2,1])
+    with col1:
+        st.header("Hospital Overview")
+        # simple stats
+        appts = load_appts_df()
+        profiles = load_profiles_df()
+        st.metric("Total Appointments", len(appts))
+        st.metric("Total Staff Profiles", len(profiles))
+        # appointment manager
+        manage_appointments_ui("Admin", st.session_state.email)
+    with col2:
+        st.header("Profile")
+        profile_display_and_edit_ui(st.session_state.email, is_admin=True)
+
+def staff_dashboard():
+    st.title("👩‍⚕️ Staff Dashboard — Thrive Mental Wellness")
+    st.sidebar.markdown(f"**Logged in:** {st.session_state.email} (Staff)")
+    if st.sidebar.button("Logout"):
+        logout_action()
+    col1, col2 = st.columns([2,1])
+    with col1:
+        st.header("My Work")
+        # appointment booking form
+        st.subheader("➕ Book Appointment")
+        patient = st.text_input("Patient full name", key="book_patient")
+        doctor = st.text_input("Doctor name", key="book_doctor")
+        date = st.date_input("Date", key="book_date")
+        time = st.time_input("Time", key="book_time")
+        reason = st.text_area("Reason", key="book_reason")
+        if st.button("Save Appointment", key="book_save"):
+            add_appointment(patient, doctor, date, time, reason, st.session_state.email)
+        st.markdown("---")
+        # manage only their appointments
+        manage_appointments_ui("Staff", st.session_state.email)
+    with col2:
+        st.header("Profile")
+        profile_display_and_edit_ui(st.session_state.email, is_admin=False)
+
+# ---------------- Main ----------------
 def main():
-    # top-level navigation
+    init_files()
+
+    # session flags default
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+    if "login_flag" not in st.session_state:
+        st.session_state.login_flag = False
+    if "logout_flag" not in st.session_state:
+        st.session_state.logout_flag = False
+
+    # If login_flag or logout_flag then rerun once to refresh the UI (avoids calling rerun inside callbacks)
+    if st.session_state.login_flag:
+        st.session_state.login_flag = False
+        st.experimental_rerun()  # safe here at top-level to force refresh after login
+    if st.session_state.logout_flag:
+        st.session_state.logout_flag = False
+        st.experimental_rerun()
+
+    # Styling header / hero
+    st.markdown("""
+        <div style='padding:18px;border-radius:8px;margin-bottom:18px; background: linear-gradient(90deg,#0072E3,#00BFFF); color:white'>
+            <h1 style='margin:0'>Thrive Mental Wellness LLC</h1>
+            <p style='margin:0'>Professional psychiatric health & treatment portal</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Not logged in: show tabs for Login / Register
     if not st.session_state.logged_in:
-        st.title("Welcome to Thrive Mental Wellness Portal")
-        choice = st.radio("Choose action", ["Login", "Register"], horizontal=True)
+        tab = st.tabs(["🔐 Login","📝 Register"])
+        with tab[0]:
+            login_ui()
+        with tab[1]:
+            register_ui()
+        st.stop()
 
-        if choice == "Login":
-            st.subheader("Login (official hospital email required)")
-            email = st.text_input("Email", key="login_email")
-            password = st.text_input("Password", type="password", key="login_pass")
-            if st.button("Login"):
-                role = authenticate_user(email, password)
-                if role:
-                    st.session_state.logged_in = True
-                    st.session_state.role = role
-                    st.session_state.user_email = email
-                    st.success(f"Logged in as {role}")
-                    # set trigger to rerun cleanly
-                    st.session_state.logout_trigger = False
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials or not an official hospital email")
-        else:
-            register_user_ui()
+    # Logged in: route to dashboard based on role
+    role = st.session_state.role
+    if role == "Admin":
+        admin_dashboard()
     else:
-        # check logout trigger from callbacks
-        if st.session_state.get("logout_trigger", False):
-            st.session_state.logout_trigger = False
-            st.rerun()
+        staff_dashboard()
 
-        # logged in UI
-        st.sidebar.markdown(f"**Logged in as:** {st.session_state.user_email}")
-        if st.sidebar.button("Logout"):
-            logout_user()
-            st.rerun()     # safe here to request rerun right after setting trigger
-
-        page = st.sidebar.radio("Navigation", ["Home", "Services", "Staff", "Book Appointment", "Dashboard"], index=0)
-        if page == "Home":
-            st.markdown('<div class="hero"><h1>Welcome to Thrive Mental Wellness LLC</h1><p>Your mental health is our priority</p></div>', unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown('<div class="card"><h3>Medication Management</h3><p>Personalized care using medications to manage mental health conditions.</p></div>', unsafe_allow_html=True)
-            with col2:
-                st.markdown('<div class="card"><h3>Psychotherapy</h3><p>Professional therapy sessions to support emotional well-being.</p></div>', unsafe_allow_html=True)
-        elif page == "Services":
-            st.header("Services")
-            st.markdown('<div class="card"><h3>Medication Management</h3><p>Medication titration and monitoring for complex cases.</p></div>', unsafe_allow_html=True)
-            st.markdown('<div class="card"><h3>Psychotherapy</h3><p>Evidence-based psychotherapy and supportive therapy sessions.</p></div>', unsafe_allow_html=True)
-        elif page == "Staff":
-            st.header("Staff Profiles")
-            df_profiles = load_profiles()
-            if df_profiles.empty:
-                st.info("No staff profiles yet. Admin can create profiles in Dashboard.")
-            else:
-                for _, row in df_profiles.iterrows():
-                    photo = row["PhotoPath"] if pd.notna(row["PhotoPath"]) and row["PhotoPath"]!="" else "https://via.placeholder.com/150?text=Photo"
-                    c1, c2 = st.columns([1,4])
-                    with c1:
-                        st.image(photo, width=110)
-                    with c2:
-                        st.markdown(f"**{row['Name']}**  ")
-                        st.markdown(f"*{row['Role']}*  ")
-                        st.write(row["Bio"])
-                        st.markdown("---")
-        elif page == "Book Appointment":
-            book_appointment_ui()
-        elif page == "Dashboard":
-            dashboard_ui()
-
-    # footer
-    st.markdown('<div class="footer">© 2025 Thrive Mental Wellness LLC | Contact: info@thrivewellness.com</div>', unsafe_allow_html=True)
-
-# Run
 if __name__ == "__main__":
     main()
