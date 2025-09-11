@@ -106,7 +106,14 @@ elif page == "Book Appointment":
         st.session_state.submissions.loc[len(st.session_state.submissions)] = [name, email, phone, service, date_time, submitted_at]
         st.success("✅ Appointment submitted successfully!")
         try:
-            msg_content = f\"\"\"New Appointment Submission\\nName: {name}\\nEmail: {email}\\nPhone: {phone}\\nService: {service}\\nDate: {date_time}\\nSubmitted At: {submitted_at}\"\"\"
+           msg_content = f"""New Appointment Submission
+            Name: {name}
+            Email: {email}
+            Phone: {phone}
+            Service: {service}
+            Date: {date_time}
+            Submitted At: {submitted_at}"""
+
             msg = MIMEText(msg_content)
             msg["Subject"] = "New Appointment Submission - Thrive Mental Wellness"
             msg["From"] = EMAIL_SENDER
