@@ -8,7 +8,15 @@ DB_FILE = "hospital.db"
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 c = conn.cursor()
 
-# Users Table - create if not exists
+# ---------------- Helper function to add missing columns ----------------
+def ensure_column(table, column, col_type="TEXT"):
+    try:
+        c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
+# ---------------- Users Table ----------------
 c.execute("""CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -19,26 +27,21 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
     phone TEXT
 )""")
 conn.commit()
+ensure_column("users", "avatar_url")
 
-# Add avatar_url column if it doesn't exist
-try:
-    c.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
-    conn.commit()
-except sqlite3.OperationalError:
-    pass  # column already exists
-
-# Reports Table
+# ---------------- Reports Table ----------------
 c.execute("""CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_name TEXT,
     treatment TEXT,
     solution TEXT,
     created_by TEXT,
-    created_by_avatar TEXT,
-    created_at TEXT
+    created_by_avatar TEXT
 )""")
+conn.commit()
+ensure_column("reports", "created_at")
 
-# Appointments Table
+# ---------------- Appointments Table ----------------
 c.execute("""CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_name TEXT,
