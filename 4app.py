@@ -1,149 +1,197 @@
-# app.py
 import streamlit as st
-import pandas as pd
-import smtplib
-from email.mime.text import MIMEText
 from datetime import datetime
+import pandas as pd
+import os
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+import plotly.express as px
 
-# ---------------- Email Config ----------------
-EMAIL_SENDER = "muthwiimeshack@gmail.com"
-EMAIL_PASSWORD = "rkubtmzydtgymkrf"
-EMAIL_RECEIVER = "muthwiimeshack@gmail.com"
-
-# ---------------- Initialize session state ----------------
-if "submissions" not in st.session_state:
-    st.session_state["submissions"] = pd.DataFrame(columns=[
-        "Name", "Email", "Phone", "Service", "Date & Time", "Submitted At"
-    ])
-
-# ---------------- Sidebar Navigation ----------------
-st.sidebar.title("Thrive Mental Wellness")
-page = st.sidebar.radio("Navigate", ["Home", "Services", "Staff", "Book Appointment", "Admin", "Legal"])
-
-# ---------------- Custom CSS ----------------
+# ---------- CSS Styling ----------
 st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Roboto&family=Lato&display=swap" rel="stylesheet">
 <style>
-body { font-family: 'Roboto', sans-serif; background-color:#f4f6f7; }
-h1,h2,h3,h4 { font-family: 'Lato', sans-serif; }
-.hero { background-color:#a0d8f1; padding:50px; border-radius:10px; text-align:center; color:#003366; animation: fadeIn 2s; }
-.card { background-color:white; padding:20px; border-radius:10px; box-shadow:2px 2px 12px rgba(0,0,0,0.1); margin-bottom:20px; transition: transform 0.3s;}
+[data-testid="stAppViewContainer"] { background-color: #E6F2FF; }
+h1,h2,h3 { font-family: 'Lato', sans-serif; color: #003366; }
+.card { background-color: white; padding:20px; border-radius:15px; box-shadow:2px 2px 12px rgba(0,0,0,0.1); margin-bottom:20px; transition: transform 0.3s; }
 .card:hover { transform: scale(1.03); }
-button:hover { background-color: #009e8f; transition: 0.3s; }
-a.button:hover { transform: scale(1.05); transition: 0.3s;}
-@keyframes fadeIn { 0% {opacity: 0;} 100% {opacity: 1;} }
+button, .stButton>button { background: linear-gradient(90deg,#0072E3,#00BFFF); color:white; padding:10px 20px; border-radius:10px; border:none; font-weight:bold; }
+button:hover, .stButton>button:hover { background: linear-gradient(90deg,#005BB5,#0095CC); }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- HOME PAGE ----------------
-if page == "Home":
-    st.image("https://via.placeholder.com/200x100.png?text=Thrive+Logo", width=200)
-    st.markdown("""
-    <div class='hero'>
-        <h1>🧠 Thrive Mental Wellness LLC</h1>
-        <p>Comprehensive mental health care in a warm and welcoming environment</p>
-        <a href='#appointment' class='button' style='background-color:#00bfa5;color:white;padding:10px 20px;border-radius:5px;text-decoration:none;'>Book Appointment</a>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("<div style='height:50px'></div>", unsafe_allow_html=True)
-    st.write("Welcome to Thrive Mental Wellness. Our team provides expert psychiatric care, including medication management and psychotherapy, tailored to your needs.")
+# ---------- Session State ----------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.role = None
+    st.session_state.user_email = None
+    st.session_state.staff_index = 0
 
-# ---------------- SERVICES PAGE ----------------
-elif page == "Services":
-    st.title("Our Services")
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("<div class='card'><h3>Medication Management</h3><p>Comprehensive evaluation and monitoring of psychiatric medications.</p></div>", unsafe_allow_html=True)
-    with col2:
-        st.markdown("<div class='card'><h3>Psychotherapy</h3><p>Individual, group, and family therapy sessions for mental health support.</p></div>", unsafe_allow_html=True)
+# ---------- Dummy User Database ----------
+users_db = {
+    "admin@example.com": {"password": "admin123", "role": "Admin"},
+    "staff1@example.com": {"password": "staff123", "role": "Staff"},
+    "staff2@example.com": {"password": "staff123", "role": "Staff"}
+}
 
-# ---------------- STAFF PAGE ----------------
-elif page == "Staff":
-    st.title("Meet Our Staff")
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-    
-    st.write("Upload your photo below (admins/staff only):")
-    uploaded_file = st.file_uploader("Upload Staff Photo", type=["png","jpg","jpeg"])
-    camera_image = st.camera_input("Or take a photo with your camera")
-    
-    if uploaded_file:
-        st.image(uploaded_file, caption="Uploaded Staff Photo", use_column_width=True)
-    elif camera_image:
-        st.image(camera_image, caption="Captured Photo", use_column_width=True)
-    
+# ---------- Helper Functions ----------
+def authenticate_user(email, password):
+    if email in users_db and users_db[email]["password"] == password:
+        return users_db[email]["role"]
+    return None
+
+def logout_user():
+    st.session_state.logged_in = False
+    st.session_state.role = None
+    st.session_state.user_email = None
+    st.experimental_rerun()
+
+def load_csv(filename, columns):
+    if os.path.exists(filename):
+        return pd.read_csv(filename)
+    else:
+        return pd.DataFrame(columns=columns)
+
+def save_csv(df, filename):
+    df.to_csv(filename, index=False)
+
+def assign_staff():
+    staff_emails = [email for email, info in users_db.items() if info["role"]=="Staff"]
+    if staff_emails:
+        assigned = staff_emails[st.session_state.staff_index % len(staff_emails)]
+        st.session_state.staff_index += 1
+        return assigned
+    return ""
+
+# ---------- Pages ----------
+def home_page():
+    st.markdown('<div class="card"><h1>Welcome to Thrive Mental Wellness LLC</h1><p>Your mental health is our priority.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="card"><h2>Services</h2><ul><li>Medication Management</li><li>Psychotherapy</li></ul></div>', unsafe_allow_html=True)
+
+def staff_page():
+    st.subheader("Staff Profiles")
+    staff_df = load_csv("staff_profiles.csv", ["Name","Role","Bio","Photo"])
+    for idx, row in staff_df.iterrows():
+        photo = row["Photo"] if pd.notna(row["Photo"]) else "https://via.placeholder.com/150?text=Staff+Photo"
+        st.image(photo, width=150)
+        st.write(f"**{row['Name']}** - {row['Role']}")
+        st.write(row['Bio'])
+        st.write("---")
+
+def book_appointment():
+    st.subheader("Book Appointment")
     name = st.text_input("Full Name")
-    role = st.text_input("Role / Position")
-    bio = st.text_area("Short Bio / Specialty")
+    email = st.text_input("Email")
+    phone = st.text_input("Phone")
+    service = st.selectbox("Service", ["Medication Management", "Psychotherapy"])
+    date_time = st.date_input("Preferred Date")
+    notes = st.text_area("Additional Notes")
     
-    if st.button("Save Staff Profile"):
-        if uploaded_file or camera_image:
-            img_to_save = uploaded_file if uploaded_file else camera_image
-            img_name = f"{name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-            with open(f"images/{img_name}", "wb") as f:
-                f.write(img_to_save.getbuffer())
-            st.success(f"✅ Staff profile saved for {name} ({role})")
-        else:
-            st.error("Please upload a photo or take a photo before saving")
-
-# ---------------- BOOK APPOINTMENT ----------------
-elif page == "Book Appointment":
-    st.title("📅 Book an Appointment")
-    st.markdown("<div id='appointment'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='card'><p>Please fill the form below and our staff will contact you to confirm your appointment.</p></div>", unsafe_allow_html=True)
-    
-    with st.form("appointment_form"):
-        name = st.text_input("Full Name")
-        email = st.text_input("Email")
-        phone = st.text_input("Phone")
-        service = st.selectbox("Select Service", ["Medication Management", "Psychotherapy"])
-        date_time = st.date_input("Preferred Date")
-        submit = st.form_submit_button("Submit Appointment")
-    
-    if submit:
+    if st.button("Submit Appointment"):
+        assigned_staff = assign_staff()
         submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.session_state.submissions.loc[len(st.session_state.submissions)] = [name, email, phone, service, date_time, submitted_at]
-        st.success("✅ Appointment submitted successfully!")
-        try:
-            msg_content = f"""New Appointment Submission
-Name: {name}
-Email: {email}
-Phone: {phone}
-Service: {service}
-Date: {date_time}
-Submitted At: {submitted_at}"""
-            msg = MIMEText(msg_content)
-            msg["Subject"] = "New Appointment Submission - Thrive Mental Wellness"
-            msg["From"] = EMAIL_SENDER
-            msg["To"] = EMAIL_RECEIVER
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-                server.send_message(msg)
-            st.info("📧 Notification sent to clinic email.")
-        except Exception as e:
-            st.error(f"❌ Email failed: {e}")
+        df = load_csv("appointments.csv", ["Name","Email","Phone","Service","Date","Notes","SubmittedAt","Status","AssignedTo"])
+        df = df.append({"Name":name,"Email":email,"Phone":phone,"Service":service,"Date":date_time,"Notes":notes,
+                        "SubmittedAt":submitted_at,"Status":"Pending","AssignedTo":assigned_staff}, ignore_index=True)
+        save_csv(df, "appointments.csv")
+        st.success(f"Appointment submitted! Assigned to: {assigned_staff}")
+        st.info("Email notifications are placeholders and will be added later.")
+        st.info("Telehealth link placeholder: https://example.com/telehealth")
 
-# ---------------- ADMIN PAGE ----------------
-elif page == "Admin":
-    st.title("Admin Dashboard")
-    st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-    st.write("View all appointment submissions")
-    st.dataframe(st.session_state.submissions)
-    csv = st.session_state.submissions.to_csv(index=False).encode('utf-8')
-    st.download_button("Download CSV", data=csv, file_name="appointments.csv")
+# ---------- Dashboard ----------
+def dashboard():
+    st.subheader(f"{'Admin' if st.session_state.role=='Admin' else 'Staff'} Dashboard")
+    df = load_csv("appointments.csv", ["Name","Email","Phone","Service","Date","Notes","SubmittedAt","Status","AssignedTo"])
+    if st.session_state.role=="Staff":
+        df = df[df["AssignedTo"]==st.session_state.user_email]
     
-    if not st.session_state.submissions.empty:
-        st.subheader("Appointment Analytics")
-        df = st.session_state.submissions
-        st.write("Total Appointments:", len(df))
-        st.bar_chart(df['Service'].value_counts())
-        df['Submitted At'] = pd.to_datetime(df['Submitted At'])
-        st.line_chart(df.groupby(df['Submitted At'].dt.date)['Name'].count())
+    st.markdown("### Interactive Appointment Table")
+    df["Date"] = pd.to_datetime(df["Date"])
+    df["StatusColor"] = df["Status"].apply(lambda x: 'lightgreen' if x=="Completed" else 'yellow')
+    
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_selection(selection_mode="single", use_checkbox=True)
+    gb.configure_column("Status", cellStyle=lambda params: {'backgroundColor': 'lightgreen' if params.value=="Completed" else 'yellow'})
+    grid_options = gb.build()
+    grid_response = AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.SELECTION_CHANGED)
+    
+    selected = grid_response["selected_rows"]
+    if selected:
+        st.markdown("### Selected Appointment Details")
+        sel = selected[0]
+        st.write(f"**Patient:** {sel['Name']}")
+        st.write(f"**Service:** {sel['Service']}")
+        st.write(f"**Date:** {sel['Date']}")
+        st.write(f"**Notes:** {sel['Notes']}")
+        st.write(f"**Assigned To:** {sel['AssignedTo']}")
+        status = sel['Status']
+        new_status = st.selectbox("Update Status", ["Pending","Completed"], index=0 if status=="Pending" else 1)
+        if st.button("Update Status"):
+            idx = df.index[df["Name"]==sel["Name"]][0]
+            df.at[idx, "Status"] = new_status
+            save_csv(df, "appointments.csv")
+            st.success("Status updated!")
+            st.experimental_rerun()
+    
+    st.markdown("### Record Patient Information")
+    patient_name = st.text_input("Patient Name")
+    patient_notes = st.text_area("Notes / Illness / Treatment")
+    if st.button("Save Patient Notes"):
+        if patient_name.strip() != "":
+            new_row = {"Name":patient_name,"Email":"","Phone":"","Service":"","Date":datetime.today().date(),
+                       "Notes":patient_notes,"SubmittedAt":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                       "Status":"Recorded","AssignedTo":st.session_state.user_email}
+            df_all = load_csv("appointments.csv", ["Name","Email","Phone","Service","Date","Notes","SubmittedAt","Status","AssignedTo"])
+            df_all = df_all.append(new_row, ignore_index=True)
+            save_csv(df_all, "appointments.csv")
+            st.success("Patient information recorded!")
 
-# ---------------- LEGAL PAGE ----------------
-elif page == "Legal":
-    st.title("Legal Information")
-    st.subheader("Privacy Policy")
-    st.write("All patient data is kept confidential and stored securely. HIPAA compliance is maintained at all times.")
-    st.subheader("Terms of Service")
-    st.write("Use of this site constitutes agreement to our terms. Appointments are subject to clinic policies.")
+    st.markdown("### Upload Profile Photo")
+    uploaded_file = st.file_uploader("Upload photo", type=["png","jpg","jpeg"])
+    if uploaded_file is not None:
+        staff_df = load_csv("staff_profiles.csv", ["Name","Role","Bio","Photo"])
+        staff_df = staff_df.append({"Name":st.session_state.user_email,"Role":st.session_state.role,"Bio":"","Photo":uploaded_file.getvalue()}, ignore_index=True)
+        save_csv(staff_df, "staff_profiles.csv")
+        st.success("Profile photo uploaded!")
+    
+    # ---------- Analytics Charts ----------
+    if st.session_state.role=="Admin":
+        st.markdown("### Analytics Dashboard")
+        df_all = load_csv("appointments.csv", ["Name","Email","Phone","Service","Date","Notes","SubmittedAt","Status","AssignedTo"])
+        if not df_all.empty:
+            service_chart = px.bar(df_all["Service"].value_counts().reset_index(), x='index', y='Service', labels={'index':'Service','Service':'Count'}, title="Appointments per Service")
+            st.plotly_chart(service_chart)
+            df_all["Date"] = pd.to_datetime(df_all["Date"])
+            daily_chart = px.line(df_all.groupby("Date").size().reset_index(name="Appointments"), x="Date", y="Appointments", title="Appointments Over Time")
+            st.plotly_chart(daily_chart)
+        st.download_button("Download All Appointments CSV", df_all.to_csv(index=False), file_name="appointments.csv")
+
+# ---------- Main App ----------
+if not st.session_state.logged_in:
+    st.title("Login")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    
+    if st.button("Login"):
+        role = authenticate_user(email, password)
+        if role:
+            st.session_state.logged_in = True
+            st.session_state.role = role
+            st.session_state.user_email = email
+            st.success(f"Logged in as {role}")
+            st.experimental_rerun()
+        else:
+            st.error("Invalid credentials")
+else:
+    st.sidebar.button("Logout", on_click=logout_user)
+    st.sidebar.title(f"Logged in as: {st.session_state.role}")
+    
+    page = st.sidebar.radio("Navigation", ["Home", "Services", "Staff", "Book Appointment", "Dashboard"])
+    
+    if page == "Home":
+        home_page()
+    elif page == "Services":
+        home_page()
+    elif page == "Staff":
+        staff_page()
+    elif page == "Book Appointment":
+        book_appointment()
+    elif page == "Dashboard":
+        dashboard()
