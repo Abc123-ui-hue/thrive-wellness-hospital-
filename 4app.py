@@ -50,7 +50,7 @@ conn.commit()
 
 # ---------------- Helper Functions ----------------
 def hash_password(password):
-    return password[::-1]  # basic hash for demo
+    return password[::-1]  # simple hash for demo
 
 def check_password(password, hashed):
     return hash_password(password) == hashed
@@ -90,7 +90,7 @@ def get_reports():
 def create_appointment(patient_name, service, date, time, provider, telehealth, created_by):
     c.execute("""INSERT INTO appointments (patient_name,service,date,time,provider,telehealth,status,created_by) 
                  VALUES (?,?,?,?,?,?,?,?)""",
-              (patient_name, service, date, time, provider, telehealth, "Pending", created_by))
+              (patient_name, service, str(date), str(time), provider, telehealth, "Pending", created_by))
     conn.commit()
 
 def get_appointments():
@@ -116,9 +116,9 @@ if "user" not in st.session_state: st.session_state.user = None
 # ---------------- Authentication ----------------
 def login():
     st.subheader("Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
+    email = st.text_input("Login Email", key="login_email")
+    password = st.text_input("Login Password", type="password", key="login_password")
+    if st.button("Login", key="login_btn"):
         user = get_user(email)
         if user and check_password(password, user[3]):
             st.session_state.logged_in = True
@@ -130,11 +130,11 @@ def login():
 
 def register():
     st.subheader("Register")
-    name = st.text_input("Full Name")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-    role = st.selectbox("Role", ["Patient", "Staff", "Admin"])
-    if st.button("Register"):
+    name = st.text_input("Full Name", key="register_name")
+    email = st.text_input("Register Email", key="register_email")
+    password = st.text_input("Register Password", type="password", key="register_password")
+    role = st.selectbox("Role", ["Patient", "Staff", "Admin"], key="register_role")
+    if st.button("Register", key="register_btn"):
         if register_user(name, email, password, role):
             st.success("Registration successful! You can login now.")
         else:
@@ -144,6 +144,9 @@ def register():
 def home_page():
     st.header("Welcome to Thrive Wellness Hospital")
     st.subheader("Your mental health matters")
+    # Display an avatar
+    avatar_url = get_avatar_url()
+    st.image(avatar_url, width=150)
     st.write("Services: Medication Management, Psychotherapy (Individual, Group, Family)")
     st.button("Book Appointment")
     st.button("Contact Us")
@@ -166,8 +169,8 @@ def contact_page():
     st.write("Address: 123 Wellness St, Nairobi")
     st.write("Phone: +254 700 000000")
     st.write("Email: contact@thrivehospital.com")
-    st.text_area("Send us a message")
-    st.button("Submit")
+    st.text_area("Send us a message", key="contact_message")
+    st.button("Submit", key="contact_submit")
 
 # ----------------- Main App -----------------
 if not st.session_state.logged_in:
@@ -186,7 +189,6 @@ else:
     st.sidebar.write(f"Bio: {user[5]}")
     st.sidebar.write(f"Phone: {user[6]}")
 
-    # Sidebar menu
     menu_items = ["Dashboard", "Profile", "Patient Reports", "Appointments", "Book Appointment", "Logout"]
     page = st.sidebar.selectbox("Menu", menu_items)
 
@@ -195,13 +197,12 @@ else:
         st.session_state.user = None
         st.experimental_rerun()
 
-    # ---------------- Profile ----------------
     elif page == "Profile":
         st.header("Edit Profile")
-        name = st.text_input("Name", value=user[1])
-        bio = st.text_area("Bio", value=user[5] if user[5] else "")
-        phone = st.text_input("Phone", value=user[6] if user[6] else "")
-        avatar_file = st.file_uploader("Upload Avatar", type=["png","jpg","jpeg"])
+        name = st.text_input("Name", value=user[1], key="profile_name")
+        bio = st.text_area("Bio", value=user[5] if user[5] else "", key="profile_bio")
+        phone = st.text_input("Phone", value=user[6] if user[6] else "", key="profile_phone")
+        avatar_file = st.file_uploader("Upload Avatar", type=["png","jpg","jpeg"], key="profile_avatar")
         avatar_url = user[7]
 
         if avatar_file:
@@ -211,12 +212,11 @@ else:
                 f.write(avatar_file.getbuffer())
             avatar_url = avatar_path
 
-        if st.button("Update Profile"):
+        if st.button("Update Profile", key="profile_update_btn"):
             update_profile(user[0], name, bio, phone, avatar_url)
             st.success("Profile updated! Reload page.")
             st.session_state.user = get_user(user[2])
 
-    # ---------------- Dashboard ----------------
     elif page == "Dashboard":
         st.header("Dashboard")
         total_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -228,15 +228,14 @@ else:
         col3.metric("Total Appointments", total_appointments)
         st.write("Quick overview of system stats")
 
-    # ---------------- Patient Reports ----------------
     elif page == "Patient Reports":
         st.header("Patient Reports")
         if user[4] in ["Admin", "Staff"]:
             st.subheader("Add Report")
-            patient_name = st.text_input("Patient Name")
-            treatment = st.text_input("Treatment")
-            solution = st.text_input("Solution")
-            if st.button("Create Report"):
+            patient_name = st.text_input("Patient Name", key="report_patient_name")
+            treatment = st.text_input("Treatment", key="report_treatment")
+            solution = st.text_input("Solution", key="report_solution")
+            if st.button("Create Report", key="create_report_btn"):
                 create_report(patient_name, treatment, solution, user[1], user[7])
                 st.success("Report added successfully!")
         st.subheader("All Reports")
@@ -252,23 +251,21 @@ else:
                 st.markdown(f"**Patient:** {r[1]}  \n**Treatment:** {r[2]}  \n**Solution:** {r[3]}  \n**By:** {r[4]}  \n**At:** {r[6]}")
             st.markdown("---")
 
-    # ---------------- Appointments ----------------
     elif page == "Appointments":
         st.header("Appointments")
         appointments = get_appointments()
         for a in appointments:
             st.markdown(f"**Patient:** {a[1]} | **Service:** {a[2]} | **Date:** {a[3]} | **Time:** {a[4]} | **Provider:** {a[5]} | **Telehealth:** {a[6]} | **Status:** {a[7]}")
 
-    # ---------------- Book Appointment ----------------
     elif page == "Book Appointment":
         st.header("Book Appointment")
-        patient_name = st.text_input("Your Name")
-        service = st.selectbox("Service", ["Medication Management","Psychotherapy"])
-        date = st.date_input("Select Date")
-        time = st.time_input("Select Time")
-        provider = st.selectbox("Provider", ["Cecilia Wamburu PMHNP-BC","John Doe Therapist"])
-        telehealth = st.checkbox("Telehealth / Online")
-        if st.button("Book"):
-            create_appointment(patient_name, service, str(date), str(time), provider, telehealth, user[1])
+        patient_name = st.text_input("Your Name", key="book_name")
+        service = st.selectbox("Service", ["Medication Management","Psychotherapy"], key="book_service")
+        date = st.date_input("Select Date", key="book_date")
+        time = st.time_input("Select Time", key="book_time")
+        provider = st.selectbox("Provider", ["Cecilia Wamburu PMHNP-BC","John Doe Therapist"], key="book_provider")
+        telehealth = st.checkbox("Telehealth / Online", key="book_telehealth")
+        if st.button("Book", key="book_btn"):
+            create_appointment(patient_name, service, date, time, provider, telehealth, user[1])
             st.success("Appointment booked successfully! Confirmation sent (simulated)")
 
