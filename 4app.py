@@ -25,8 +25,7 @@ try:
     c.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
     conn.commit()
 except sqlite3.OperationalError:
-    # Column already exists
-    pass
+    pass  # column already exists
 
 # Reports Table
 c.execute("""CREATE TABLE IF NOT EXISTS reports (
@@ -125,31 +124,6 @@ st.markdown("""
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "user" not in st.session_state: st.session_state.user = None
 
-# ---------------- Authentication ----------------
-def login():
-    st.subheader("Login")
-    email = st.text_input("Login Email", key="login_email")
-    password = st.text_input("Login Password", type="password", key="login_password")
-    if st.button("Login", key="login_btn"):
-        user = get_user(email)
-        if user and check_password(password, user[3]):
-            st.session_state.logged_in = True
-            st.session_state.user = user
-            st.success(f"Welcome, {user[1]}!")
-            st.experimental_rerun()
-        else:
-            st.error("Invalid email or password.")
-
-def register():
-    st.subheader("Register")
-    name = st.text_input("Full Name", key="register_name")
-    email = st.text_input("Email", key="register_email")
-    password = st.text_input("Password", type="password", key="register_password")
-    role = st.selectbox("Role", ["Patient","Staff","Admin"], key="register_role")
-    if st.button("Register", key="register_btn"):
-        if register_user(name, email, password, role):
-            st.success("Registration successful! You can login now.")
-
 # ---------------- Public Pages ----------------
 def home_page():
     st.header("Welcome to Thrive Wellness Hospital")
@@ -162,12 +136,39 @@ def home_page():
     st.markdown("**Testimonials / Success Stories**: Patient A, Patient B")
     st.markdown("Follow us on [Facebook](#) | [Twitter](#) | [Instagram](#)")
 
+# ---------------- Login/Register Functions ----------------
+def login_tab():
+    st.subheader("Login")
+    email = st.text_input("Login Email", key="login_email")
+    password = st.text_input("Login Password", type="password", key="login_password")
+    if st.button("Login", key="login_btn"):
+        user = get_user(email)
+        if user and check_password(password, user[3]):
+            st.session_state.logged_in = True
+            st.session_state.user = user
+            st.success(f"Welcome, {user[1]}!")
+        else:
+            st.error("Invalid email or password.")
+
+def register_tab():
+    st.subheader("Register")
+    name = st.text_input("Full Name", key="register_name")
+    email = st.text_input("Email", key="register_email")
+    password = st.text_input("Password", type="password", key="register_password")
+    role = st.selectbox("Role", ["Patient","Staff","Admin"], key="register_role")
+    if st.button("Register", key="register_btn"):
+        if register_user(name, email, password, role):
+            st.success("Registration successful! You can login now.")
+
 # ---------------- Main App -----------------
 if not st.session_state.logged_in:
     tabs = st.tabs(["Home", "Login", "Register"])
-    with tabs[0]: home_page()
-    with tabs[1]: login()
-    with tabs[2]: register()
+    with tabs[0]:
+        home_page()
+    with tabs[1]:
+        login_tab()
+    with tabs[2]:
+        register_tab()
 else:
     user = st.session_state.user
     st.sidebar.image(user[7], width=100)
