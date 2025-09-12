@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 from datetime import datetime
+from hashlib import sha256
 
 # ----------------- DATABASE -----------------
 conn = sqlite3.connect("hospital.db", check_same_thread=False)
@@ -32,11 +33,23 @@ CREATE TABLE IF NOT EXISTS appointments (
     created_by TEXT
 )
 """)
+
+# Treatment reports table
+c.execute("""
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY,
+    patient_name TEXT,
+    treatment TEXT,
+    solution TEXT,
+    doctor TEXT,
+    created_at TEXT
+)
+""")
 conn.commit()
 
 # ----------------- HELPERS -----------------
 def hash_password(password):
-    return password[::-1]
+    return sha256(password.encode()).hexdigest()
 
 def check_user(email, password):
     c.execute("SELECT * FROM users WHERE email=? AND password=?", (email, hash_password(password)))
@@ -66,6 +79,15 @@ def get_appointments(user_email, role):
         c.execute("SELECT * FROM appointments WHERE created_by=? ORDER BY date DESC", (user_email,))
     return c.fetchall()
 
+def create_report(patient_name, treatment, solution, doctor):
+    c.execute("INSERT INTO reports (patient_name,treatment,solution,doctor,created_at) VALUES (?,?,?,?,?)",
+              (patient_name, treatment, solution, doctor, str(datetime.now())))
+    conn.commit()
+
+def get_reports():
+    c.execute("SELECT * FROM reports ORDER BY created_at DESC")
+    return c.fetchall()
+
 # ----------------- SESSION -----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -77,12 +99,11 @@ st.set_page_config(page_title="Thrive Wellness Hospital", layout="wide")
 # ----------------- STYLES -----------------
 st.markdown("""
 <style>
-/* Card styling */
-.card { background-color:#f5f5f5; padding:20px; border-radius:10px; text-align:center; margin:10px; transition: transform 0.2s; }
-.card:hover { transform:translateY(-5px); box-shadow:0px 4px 8px rgba(0,0,0,0.2); }
-/* Hero section */
+body {background-color: #f0f2f6;}
+.card { background-color:#ffffff; padding:20px; border-radius:10px; text-align:center; margin:10px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
+.card:hover { transform:translateY(-5px); box-shadow:0px 8px 16px rgba(0,0,0,0.2); }
 .hero { position: relative; text-align: center; color: white; }
-.hero img { width: 100%; height: auto; filter: brightness(0.7); }
+.hero img { width: 100%; height: auto; filter: brightness(0.7); border-radius:10px;}
 .hero-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
 .hero-text h1 { font-size: 3em; }
 .hero-text button { font-size: 1.2em; padding: 12px 24px; margin: 10px; border-radius: 8px; border:none; background-color:#007ACC; color:white; cursor:pointer; }
@@ -132,7 +153,7 @@ def about_page():
     st.header("About Our Clinic")
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("<div class='card'>Clinic Photo Placeholder</div>", unsafe_allow_html=True)
+        st.image("images/ai-generated-8722616_1280.jpg", use_column_width=True)
     with col2:
         st.markdown("**Mission:** Provide quality mental health care.\n\n**Vision:** Promote wellness for all.\n\n**Certifications:** TBD", unsafe_allow_html=True)
 
@@ -169,7 +190,7 @@ def login_register_page():
         name = st.text_input("Full Name", key="reg_name")
         email_r = st.text_input("Email", key="reg_email")
         password_r = st.text_input("Password", type="password", key="reg_pass")
-        role = st.selectbox("Role", ["patient","staff"], key="reg_role")
+        role = st.selectbox("Role", ["patient","staff","admin"], key="reg_role")
         avatar_url = st.text_input("Avatar URL (optional)", key="avatar_url")
         if st.button("Register", key="reg_btn"):
             if register_user(name,email_r,password_r,role,avatar_url):
@@ -211,6 +232,13 @@ def dashboard_page():
             st.markdown(f"- {appt[1]} with {appt[5]} on {appt[3]} at {appt[4]} ({appt[7]})")
     else:
         st.info("No appointments yet.")
+    st.subheader("Treatment Reports")
+    reports = get_reports()
+    if reports:
+        for r in reports:
+            st.markdown(f"- Patient: {r[1]}, Treatment: {r[2]}, Solution: {r[3]}, By: {r[4]}, At: {r[5]}")
+    else:
+        st.info("No reports yet.")
     if st.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.user = None
@@ -227,15 +255,4 @@ if page=="Home":
     home_page()
 elif page=="Services":
     services_page()
-elif page=="Staff":
-    staff_page()
-elif page=="About":
-    about_page()
-elif page=="Contact":
-    contact_page()
-elif page=="Login/Register":
-    login_register_page()
-elif page=="Appointments":
-    appointments_page()
-elif page=="Dashboard":
-    dashboard_page()
+
