@@ -102,27 +102,18 @@ st.markdown("""
 body {background-color: #f0f2f6;}
 .card { background-color:#ffffff; padding:20px; border-radius:10px; text-align:center; margin:10px; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
 .card:hover { transform:translateY(-5px); box-shadow:0px 8px 16px rgba(0,0,0,0.2); }
-.hero { position: relative; text-align: center; color: white; }
-.hero img { width: 100%; height: auto; filter: brightness(0.7); border-radius:10px;}
-.hero-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
-.hero-text h1 { font-size: 3em; }
-.hero-text button { font-size: 1.2em; padding: 12px 24px; margin: 10px; border-radius: 8px; border:none; background-color:#007ACC; color:white; cursor:pointer; }
-.hero-text button:hover { background-color:#005f99; }
+.hero { position: relative; text-align: center; color: #ffffff; background-color: #007ACC; padding:80px; border-radius:10px; }
+.hero h1 { font-size: 3em; margin-bottom:20px; }
+.hero button { font-size: 1.2em; padding: 12px 24px; margin: 10px; border-radius: 8px; border:none; background-color:#005f99; color:white; cursor:pointer; }
+.hero button:hover { background-color:#003f66; }
 </style>
 """, unsafe_allow_html=True)
 
 # ----------------- PAGE FUNCTIONS -----------------
 def home_page():
-    st.markdown("""
-    <div class='hero'>
-        <img src='images/ai-generated-8722616_1280.jpg' alt='Clinic Hero'>
-        <div class='hero-text'>
-            <h1>Welcome to Thrive Wellness Hospital</h1>
-            <button onclick="window.location.href='#Appointments'">Book Appointment</button>
-            <button onclick="window.location.href='#Contact'">Contact Us</button>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("<div class='hero'><h1>Welcome to Thrive Wellness Hospital</h1>"
+                "<button onclick=\"window.location.href='#Appointments'\">Book Appointment</button>"
+                "<button onclick=\"window.location.href='#Contact'\">Contact Us</button></div>", unsafe_allow_html=True)
 
 def services_page():
     st.header("Our Services")
@@ -138,24 +129,21 @@ def services_page():
 
 def staff_page():
     st.header("Meet Our Staff")
-    staff_list = [
-        {"role":"PMHNP-BC","img":"images/marek-studzinski-Q3J1wmn7_8w-unsplash.jpg"},
-        {"role":"Therapist","img":"images/pexels-karolina-grabowska-4226769.jpg"},
-        {"role":"Counselor","img":"images/pexels-shvetsa-3845129.jpg"}
-    ]
+    staff_list = ["PMHNP-BC","Therapist","Counselor"]
     cols = st.columns(len(staff_list))
     for col, s in zip(cols, staff_list):
         with col:
-            st.image(s["img"], width=150)
-            st.markdown(f"<h4>{s['role']}</h4>", unsafe_allow_html=True)
+            st.markdown(f"<div class='card'><h4>{s}</h4></div>", unsafe_allow_html=True)
 
 def about_page():
     st.header("About Our Clinic")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image("images/ai-generated-8722616_1280.jpg", use_column_width=True)
-    with col2:
-        st.markdown("**Mission:** Provide quality mental health care.\n\n**Vision:** Promote wellness for all.\n\n**Certifications:** TBD", unsafe_allow_html=True)
+    st.markdown("""
+**Mission:** Provide quality mental health care.
+
+**Vision:** Promote wellness for all.
+
+**Certifications & Awards:** TBD
+""")
 
 def contact_page():
     st.header("Contact Us")
@@ -183,6 +171,7 @@ def login_register_page():
                 st.session_state.logged_in = True
                 st.session_state.user = user
                 st.success("Logged in successfully!")
+                st.experimental_rerun()
             else:
                 st.error("Invalid credentials")
     with col2:
@@ -219,12 +208,7 @@ def appointments_page():
 def dashboard_page():
     st.header("Dashboard")
     user = st.session_state.user
-    st.text(f"Hello, {user[1]}")
-    if user[5]:
-        try:
-            st.image(user[5], width=100)
-        except:
-            st.info("Avatar not available")
+    st.text(f"Hello, {user[1]} ({user[4]})")
     st.subheader("Appointments")
     appointments = get_appointments(user[2], user[4])
     if appointments:
@@ -251,8 +235,20 @@ if st.session_state.logged_in:
 
 page = st.sidebar.selectbox("Navigate", pages)
 
+# ----------------- PAGE ROUTING -----------------
 if page=="Home":
     home_page()
 elif page=="Services":
     services_page()
-
+elif page=="Staff":
+    staff_page()
+elif page=="Appointments":
+    appointments_page()
+elif page=="About":
+    about_page()
+elif page=="Contact":
+    contact_page()
+elif page=="Login/Register":
+    login_register_page()
+elif page=="Dashboard":
+    dashboard_page()
