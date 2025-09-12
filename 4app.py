@@ -2,81 +2,88 @@ import streamlit as st
 import sqlite3
 from datetime import datetime
 
-# ---------------- DATABASE ----------------
+# ---------------- DATABASE SETUP ----------------
 conn = sqlite3.connect("hospital.db", check_same_thread=False)
 c = conn.cursor()
 
-c.execute("""
-CREATE TABLE IF NOT EXISTS users (
+# Users Table
+c.execute("""CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fullname TEXT,
-    email TEXT UNIQUE,
-    password TEXT,
-    role TEXT
-)
-""")
+    fullname TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL
+)""")
 
-c.execute("""
-CREATE TABLE IF NOT EXISTS appointments (
+# Appointments Table
+c.execute("""CREATE TABLE IF NOT EXISTS appointments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_name TEXT,
-    service TEXT,
-    date TEXT,
-    time TEXT,
-    provider TEXT
-)
-""")
+    patient_name TEXT NOT NULL,
+    service TEXT NOT NULL,
+    date TEXT NOT NULL,
+    time TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    telehealth TEXT,
+    status TEXT,
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)""")
+
+# Reports Table
+c.execute("""CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_name TEXT NOT NULL,
+    treatment TEXT NOT NULL,
+    solution TEXT NOT NULL,
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)""")
 conn.commit()
-
-# ---------------- SESSION ----------------
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "role" not in st.session_state:
-    st.session_state.role = None
-if "user" not in st.session_state:
-    st.session_state.user = None
 
 # ---------------- AUTH FUNCTIONS ----------------
 def register_user(fullname, email, password, role):
+    if not fullname or not email or not password or not role:
+        return "missing"  # validation failed
     try:
         c.execute("INSERT INTO users (fullname, email, password, role) VALUES (?, ?, ?, ?)",
-                  (fullname, email, password, role))
+                  (fullname.strip(), email.strip(), password.strip(), role))
         conn.commit()
-        return True
+        return "success"
     except sqlite3.IntegrityError:
-        return False
+        return "exists"
 
 def login_user(email, password):
     c.execute("SELECT * FROM users WHERE email=? AND password=?", (email, password))
     return c.fetchone()
 
-# ---------------- PAGES ----------------
+# ---------------- DATA FUNCTIONS ----------------
+def create_appointment(patient_name, service, date, time, provider, telehealth, created_by):
+    c.execute("""INSERT INTO appointments 
+              (patient_name, service, date, time, provider, telehealth, status, created_by) 
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+              (patient_name, service, str(date), str(time), provider, telehealth, "Pending", created_by))
+    conn.commit()
+
+def get_appointments():
+    c.execute("SELECT * FROM appointments ORDER BY created_at DESC")
+    return c.fetchall()
+
+def create_report(patient_name, treatment, solution, created_by):
+    c.execute("INSERT INTO reports (patient_name, treatment, solution, created_by) VALUES (?, ?, ?, ?)",
+              (patient_name, treatment, solution, created_by))
+    conn.commit()
+
+def get_reports():
+    c.execute("SELECT * FROM reports ORDER BY created_at DESC")
+    return c.fetchall()
+
+# ---------------- PAGE FUNCTIONS ----------------
 def home_page():
     st.title("🏥 Thrive Wellness Hospital")
-    st.write("Welcome to **Thrive Wellness Hospital Portal**.")
-    st.write("Please use the sidebar to navigate.")
-
-def about_page():
-    st.title("ℹ️ About Our Clinic")
-    st.write("We provide professional and compassionate healthcare services.")
-
-def services_page():
-    st.title("🛎 Our Services")
-    st.write("- Medication Management\n- Psychotherapy\n- Telehealth")
-
-def contact_page():
-    st.title("📞 Contact Us")
-    st.write("**Address:** 123 Wellness Ave, Nairobi, Kenya")
-    st.write("**Phone:** +254 700 000 000")
-    st.write("**Email:** info@thrivewellness.com")
-    name = st.text_input("Your Name")
-    email = st.text_input("Your Email")
-    msg = st.text_area("Your Message")
-    if st.button("Send Message"):
-        st.success("Message sent successfully!")
+    st.subheader("Welcome to our digital portal")
 
 def login_register_page():
-    st.title("🔑 Login / Register")
+    st.title("🔐 Login / Register")
     tab1, tab2 = st.tabs(["Login", "Register"])
 
     with tab1:
@@ -85,12 +92,10 @@ def login_register_page():
         if st.button("Login"):
             user = login_user(email, password)
             if user:
-                st.session_state.logged_in = True
-                st.session_state.role = user[4]
-                st.session_state.user = user
-                st.success("Logged in successfully!")
+                st.session_state["user"] = user
+                st.success("✅ Logged in successfully!")
             else:
-                st.error("Invalid credentials.")
+                st.error("❌ Invalid credentials.")
 
     with tab2:
         fullname = st.text_input("Full Name")
@@ -98,83 +103,90 @@ def login_register_page():
         password = st.text_input("Password", type="password", key="reg_pass")
         role = st.selectbox("Role", ["patient", "staff", "admin"])
         if st.button("Register"):
-            if register_user(fullname, email, password, role):
-                st.success("Account created. Please login.")
-            else:
-                st.error("Email already exists.")
+            result = register_user(fullname, email, password, role)
+            if result == "success":
+                st.success("✅ Account created. Please login.")
+            elif result == "exists":
+                st.error("⚠️ Email already exists. Try logging in.")
+            elif result == "missing":
+                st.error("⚠️ Please fill in all fields.")
 
-def patient_page():
-    st.title("👩‍⚕️ Patient Dashboard")
-    st.subheader("Book Appointment")
-    name = st.text_input("Patient Name")
-    service = st.selectbox("Service", ["Medication Management", "Psychotherapy", "Telehealth"])
+def appointment_page():
+    st.title("📅 Book Appointment")
+    if "user" not in st.session_state:
+        st.warning("Please login first.")
+        return
+    patient_name = st.text_input("Patient Name")
+    service = st.selectbox("Select Service", ["Medication Management", "Psychotherapy", "Telehealth"])
     date = st.date_input("Select Date")
     time = st.time_input("Select Time")
-    provider = st.text_input("Provider")
-    if st.button("Book"):
-        c.execute("INSERT INTO appointments (patient_name, service, date, time, provider) VALUES (?, ?, ?, ?, ?)",
-                  (name, service, str(date), str(time), provider))
-        conn.commit()
-        st.success("Appointment booked!")
+    provider = st.selectbox("Select Provider", ["PMHNP-BC", "Therapist", "Counselor"])
+    telehealth = st.selectbox("Telehealth", ["Yes", "No"])
+    if st.button("Book Appointment"):
+        create_appointment(patient_name, service, date, time, provider, telehealth, st.session_state["user"][1])
+        st.success("✅ Appointment booked successfully!")
 
 def staff_page():
-    st.title("👨‍⚕️ Staff Dashboard")
-    st.subheader("View Appointments")
-    c.execute("SELECT * FROM appointments")
-    rows = c.fetchall()
-    if rows:
-        for r in rows:
-            st.write(f"📌 {r[1]} | {r[2]} on {r[3]} at {r[4]} with {r[5]}")
-    else:
-        st.info("No appointments found.")
+    st.title("🩺 Staff Dashboard")
+    if "user" not in st.session_state or st.session_state["user"][4] not in ["staff", "admin"]:
+        st.warning("Access restricted to staff/admin.")
+        return
+
+    st.subheader("Write Patient Report")
+    patient_name = st.text_input("Patient Name")
+    treatment = st.text_area("Treatment")
+    solution = st.text_area("Solution")
+    if st.button("Submit Report"):
+        create_report(patient_name, treatment, solution, st.session_state["user"][1])
+        st.success("✅ Report submitted.")
+
+    st.subheader("📋 All Reports")
+    reports = get_reports()
+    for r in reports:
+        st.write(f"**Patient:** {r[1]} | **Treatment:** {r[2]} | **Solution:** {r[3]} | By: {r[4]} | At: {r[5]}")
 
 def admin_page():
-    st.title("🛠 Admin Dashboard")
-    st.subheader("Manage Users")
-    c.execute("SELECT fullname, email, role FROM users")
-    users = c.fetchall()
-    if users:
-        for u in users:
-            st.write(f"👤 {u[0]} | {u[1]} | {u[2]}")
-    else:
-        st.info("No users registered.")
+    st.title("⚙️ Admin Dashboard")
+    if "user" not in st.session_state or st.session_state["user"][4] != "admin":
+        st.warning("Access restricted to admin.")
+        return
+
+    st.subheader("📅 All Appointments")
+    appointments = get_appointments()
+    for a in appointments:
+        st.write(f"Patient: {a[1]} | Service: {a[2]} | Date: {a[3]} | Time: {a[4]} | Provider: {a[5]} | Status: {a[6]} | By: {a[7]}")
+
+def contact_page():
+    st.title("📞 Contact Us")
+    st.write("Address: 123 Wellness Ave, Nairobi, Kenya")
+    st.write("Phone: +254 700 000 000")
+    st.write("Email: info@thrivewellness.com")
+
+    name = st.text_input("Your Name")
+    email = st.text_input("Your Email")
+    message = st.text_area("Your Message")
+    if st.button("Send Message"):
+        st.success("✅ Message sent successfully!")
 
 # ---------------- MAIN APP ----------------
-st.sidebar.title("🌐 Navigation")
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Home", "Login/Register", "Book Appointment", "Staff", "Admin", "Contact Us"])
 
-if st.session_state.logged_in:
-    st.sidebar.write(f"Welcome, **{st.session_state.user[1]}** ({st.session_state.role})")
-    page = st.sidebar.radio("Go to", ["Home", "About", "Services", "Contact", "Patient", "Staff", "Admin", "Logout"])
+if page == "Home":
+    home_page()
+elif page == "Login/Register":
+    login_register_page()
+elif page == "Book Appointment":
+    appointment_page()
+elif page == "Staff":
+    staff_page()
+elif page == "Admin":
+    admin_page()
+elif page == "Contact Us":
+    contact_page()
 
-    if page == "Home":
-        home_page()
-    elif page == "About":
-        about_page()
-    elif page == "Services":
-        services_page()
-    elif page == "Contact":
-        contact_page()
-    elif page == "Patient" and st.session_state.role == "patient":
-        patient_page()
-    elif page == "Staff" and st.session_state.role == "staff":
-        staff_page()
-    elif page == "Admin" and st.session_state.role == "admin":
-        admin_page()
-    elif page == "Logout":
-        st.session_state.logged_in = False
-        st.session_state.role = None
-        st.session_state.user = None
-        st.success("Logged out successfully!")
-
-else:
-    page = st.sidebar.radio("Go to", ["Home", "About", "Services", "Contact", "Login/Register"])
-    if page == "Home":
-        home_page()
-    elif page == "About":
-        about_page()
-    elif page == "Services":
-        services_page()
-    elif page == "Contact":
-        contact_page()
-    elif page == "Login/Register":
-        login_register_page()
+# Logout button
+if "user" in st.session_state:
+    if st.sidebar.button("Logout"):
+        del st.session_state["user"]
+        st.success("✅ Logged out successfully.")
