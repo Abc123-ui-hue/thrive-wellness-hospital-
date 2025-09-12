@@ -1,313 +1,226 @@
 import streamlit as st
 import sqlite3
 from datetime import datetime
-import os
 
-# ---------------- Database Setup ----------------
-DB_FILE = "hospital.db"
-conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+# ----------------- DATABASE SETUP -----------------
+conn = sqlite3.connect("hospital.db", check_same_thread=False)
 c = conn.cursor()
 
-# ---------------- Helper function to add missing columns ----------------
-def ensure_column(table, column, col_type="TEXT"):
-    try:
-        c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
+# Users table
+c.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    email TEXT UNIQUE,
+    password TEXT,
+    role TEXT,
+    avatar_url TEXT
+)
+""")
 
-# ---------------- Users Table ----------------
-c.execute("""CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL,
-    bio TEXT,
-    phone TEXT
-)""")
+# Appointments table
+c.execute("""
+CREATE TABLE IF NOT EXISTS appointments (
+    id INTEGER PRIMARY KEY,
+    patient_name TEXT,
+    service TEXT,
+    date TEXT,
+    time TEXT,
+    provider TEXT,
+    telehealth INTEGER,
+    status TEXT,
+    created_by TEXT
+)
+""")
 conn.commit()
-ensure_column("users", "avatar_url")
 
-# ---------------- Reports Table ----------------
-c.execute("""CREATE TABLE IF NOT EXISTS reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT
-)""")
-conn.commit()
-for col, typ in [
-    ("patient_name", "TEXT"),
-    ("treatment", "TEXT"),
-    ("solution", "TEXT"),
-    ("created_by", "TEXT"),
-    ("created_by_avatar", "TEXT"),
-    ("created_at", "TEXT")
-]:
-    ensure_column("reports", col, typ)
-
-# ---------------- Appointments Table ----------------
-c.execute("""CREATE TABLE IF NOT EXISTS appointments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT
-)""")
-conn.commit()
-for col, typ in [
-    ("patient_name", "TEXT"),
-    ("service", "TEXT"),
-    ("date", "TEXT"),
-    ("time", "TEXT"),
-    ("provider", "TEXT"),
-    ("telehealth", "BOOLEAN"),
-    ("status", "TEXT"),
-    ("created_by", "TEXT")
-]:
-    ensure_column("appointments", col, typ)
-
-# ---------------- Helper Functions ----------------
+# ----------------- HELPERS -----------------
 def hash_password(password):
-    return password[::-1]  # simple hash for demo
+    return password[::-1]
 
-def check_password(password, hashed):
-    return hash_password(password) == hashed
-
-def get_avatar_url():
-    return "https://thispersondoesnotexist.com/image"
-
-def get_user(email):
-    c.execute("SELECT * FROM users WHERE email=?", (email,))
+def check_user(email, password):
+    c.execute("SELECT * FROM users WHERE email=? AND password=?", (email, hash_password(password)))
     return c.fetchone()
 
-def register_user(name, email, password, role):
-    if not name or not email or not password or not role:
-        st.error("All fields are required!")
-        return False
-    avatar_url = get_avatar_url()
+def register_user(name, email, password, role, avatar_url):
     try:
-        c.execute(
-            "INSERT INTO users (name,email,password,role,avatar_url) VALUES (?,?,?,?,?)",
-            (name, email, hash_password(password), role, avatar_url)
-        )
+        c.execute("INSERT INTO users (name,email,password,role,avatar_url) VALUES (?,?,?,?,?)",
+                  (name, email, hash_password(password), role, avatar_url))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
-        st.error("Email already exists!")
+    except:
         return False
-    except sqlite3.OperationalError as e:
-        st.error(f"Database error: {e}")
-        return False
-
-def update_profile(user_id, name, bio, phone, avatar_url):
-    c.execute("UPDATE users SET name=?, bio=?, phone=?, avatar_url=? WHERE id=?",
-              (name, bio, phone, avatar_url, user_id))
-    conn.commit()
-
-def create_report(patient_name, treatment, solution, created_by, avatar_url):
-    c.execute("""INSERT INTO reports (patient_name,treatment,solution,created_by,created_by_avatar,created_at) 
-                 VALUES (?,?,?,?,?,?)""",
-              (patient_name, treatment, solution, created_by, avatar_url, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-
-def get_reports():
-    c.execute("""
-        SELECT patient_name, treatment, solution, created_by, created_by_avatar, created_at
-        FROM reports
-        ORDER BY created_at DESC
-    """)
-    return c.fetchall()
 
 def create_appointment(patient_name, service, date, time, provider, telehealth, created_by):
-    c.execute("""INSERT INTO appointments (patient_name,service,date,time,provider,telehealth,status,created_by) 
+    c.execute("""INSERT INTO appointments (patient_name,service,date,time,provider,telehealth,status,created_by)
                  VALUES (?,?,?,?,?,?,?,?)""",
               (patient_name, service, str(date), str(time), provider, telehealth, "Pending", created_by))
     conn.commit()
 
-def get_appointments():
-    c.execute("SELECT * FROM appointments ORDER BY date DESC, time DESC")
+def get_appointments(user_email, role):
+    if role=="admin":
+        c.execute("SELECT * FROM appointments ORDER BY date DESC")
+    elif role=="staff":
+        c.execute("SELECT * FROM appointments WHERE provider=? ORDER BY date DESC", (user_email,))
+    else:
+        c.execute("SELECT * FROM appointments WHERE created_by=? ORDER BY date DESC", (user_email,))
     return c.fetchall()
 
-def safe_display_image(img_path, width=100):
-    if img_path:
-        if img_path.startswith("http"):
-            st.image(img_path, width=width)
-        elif os.path.exists(img_path):
-            st.image(open(img_path, "rb"), width=width)
-        else:
-            st.image(get_avatar_url(), width=width)
-    else:
-        st.image(get_avatar_url(), width=width)
+# ----------------- SESSION STATE -----------------
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.user = None
 
-# ---------------- Streamlit Config ----------------
-st.set_page_config(page_title="Thrive Wellness Hospital Portal", layout="wide")
+# ----------------- STYLES -----------------
 st.markdown("""
 <style>
-.stApp {background: linear-gradient(to right, #a1c4fd, #c2e9fb); min-height:100vh;}
-.stButton>button {background-color: #4CAF50; color: white;}
-.stMetric-value {font-size:2rem !important; color:#1a1a1a;}
+@keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
+.hero { background-image: url('images/ai-generated-8722616_1280.jpg'); background-size: cover; background-position: center; height: 450px; display:flex; align-items:center; justify-content:center; }
+.hero-text { animation: fadeIn 2s ease-in-out; color:white; font-size:3rem; font-weight:bold; text-shadow:2px 2px 4px #000; text-align:center; }
+.cta-buttons button { background-color:#4f8ef7; color:white; padding:10px 25px; margin:10px; border-radius:5px; border:none; cursor:pointer; }
+.cta-buttons button:hover { background-color:#3a6fcc; }
+.section { padding:50px; }
+.service-card, .staff-card, .clinic-card { background-color:#f5f5f5; padding:20px; border-radius:10px; text-align:center; margin:10px; transition: transform 0.2s; }
+.service-card:hover, .staff-card:hover, .clinic-card:hover { transform:translateY(-5px); box-shadow:0px 4px 8px rgba(0,0,0,0.2); }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- Session State ----------------
-if "logged_in" not in st.session_state: st.session_state.logged_in = False
-if "user" not in st.session_state: st.session_state.user = None
+# ----------------- HERO -----------------
+st.markdown("<div class='hero'><div class='hero-text'>Thrive Wellness Hospital</div></div>", unsafe_allow_html=True)
+st.markdown("""
+<div class='cta-buttons'>
+<button onclick="window.scrollTo({top:document.getElementById('appointment').offsetTop, behavior:'smooth'})">Book Appointment</button>
+<button onclick="window.scrollTo({top:document.getElementById('contact').offsetTop, behavior:'smooth'})">Contact Us</button>
+</div>
+""", unsafe_allow_html=True)
 
-# ---------------- Public Pages ----------------
-def home_page():
-    st.header("Welcome to Thrive Wellness Hospital")
-    st.subheader("Your mental health matters")
-    st.image(get_avatar_url(), width=150)
-    st.write("Services: Medication Management, Psychotherapy (Individual, Group, Family)")
-    st.button("Book Appointment")
-    st.button("Contact Us")
-    st.markdown("**Featured Staff:** Cecilia Wamburu PMHNP-BC")
-    st.markdown("**Testimonials / Success Stories**")
-    st.markdown("- Patient A: \"Great care!\"  \n- Patient B: \"Highly recommend!\"")
-    st.markdown("Follow us on [Facebook](#) | [Twitter](#) | [Instagram](#)")
+# ----------------- LOGIN / REGISTER -----------------
+st.markdown("<div class='section'><h2>Login / Register</h2></div>", unsafe_allow_html=True)
+login_col, reg_col = st.columns(2)
 
-def about_us_page():
-    st.header("About Us")
-    st.markdown("**Mission:** Provide compassionate mental health care")
-    st.markdown("**Vision:** Empower mental wellness for all")
-    st.markdown("**Staff Bios & Credentials:**")
-    st.markdown("- Cecilia Wamburu PMHNP-BC: Psychiatric Nurse Practitioner")
-    st.markdown("- John Doe Therapist: Licensed Therapist")
-    st.markdown("**Certifications & Awards:**")
-    st.markdown("- Accredited Mental Health Clinic")
-    st.markdown("- Award for Outstanding Care 2024")
-    st.image("https://images.unsplash.com/photo-1596495577886-d920f40d4b6f?auto=format&fit=crop&w=800&q=80", caption="Our Clinic Environment")
-    st.image("https://images.unsplash.com/photo-1588776814546-c10bfe5da42f?auto=format&fit=crop&w=800&q=80", caption="Patient-friendly waiting area")
-
-def services_page():
-    st.header("Our Services")
-    st.markdown("**Medication Management**: Personalized prescriptions and monitoring")
-    st.markdown("**Psychotherapy**: Individual, Group, and Family sessions")
-    st.markdown("**Telehealth / Online Therapy**: Secure HIPAA-compliant video sessions")
-    st.markdown("**Future Services:** We plan to expand services as needed")
-
-# ---------------- Login/Register ----------------
-def login_tab():
+with login_col:
     st.subheader("Login")
-    email = st.text_input("Login Email", key="login_email")
-    password = st.text_input("Login Password", type="password", key="login_password")
+    email = st.text_input("Email", key="login_email")
+    password = st.text_input("Password", type="password", key="login_pass")
     if st.button("Login", key="login_btn"):
-        user = get_user(email)
-        if user and check_password(password, user[3]):
+        user = check_user(email, password)
+        if user:
             st.session_state.logged_in = True
             st.session_state.user = user
-            st.success(f"Welcome, {user[1]}!")
+            st.success("Logged in successfully!")
         else:
-            st.error("Invalid email or password.")
+            st.error("Invalid credentials")
 
-def register_tab():
+with reg_col:
     st.subheader("Register")
-    name = st.text_input("Full Name", key="register_name")
-    email = st.text_input("Email", key="register_email")
-    password = st.text_input("Password", type="password", key="register_password")
-    role = st.selectbox("Role", ["Patient","Staff","Admin"], key="register_role")
-    if st.button("Register", key="register_btn"):
-        if register_user(name, email, password, role):
-            st.success("Registration successful! You can login now.")
+    name = st.text_input("Full Name", key="reg_name")
+    email_r = st.text_input("Email", key="reg_email")
+    password_r = st.text_input("Password", type="password", key="reg_pass")
+    role = st.selectbox("Role", ["patient","staff"], key="reg_role")
+    avatar_url = st.text_input("Avatar URL (optional)", key="avatar_url")
+    if st.button("Register", key="reg_btn"):
+        if register_user(name,email_r,password_r,role,avatar_url):
+            st.success("Registered successfully! Please login.")
+        else:
+            st.error("Registration failed (maybe email exists)")
 
-# ---------------- Main App -----------------
-if not st.session_state.logged_in:
-    public_tabs = st.tabs(["Home","About Us","Services","Login","Register"])
-    with public_tabs[0]:
-        home_page()
-    with public_tabs[1]:
-        about_us_page()
-    with public_tabs[2]:
-        services_page()
-    with public_tabs[3]:
-        login_tab()
-    with public_tabs[4]:
-        register_tab()
+# ----------------- SERVICES -----------------
+st.markdown("<div class='section'><h2>Our Services</h2></div>", unsafe_allow_html=True)
+services_cols = st.columns(3)
+services = [
+    {"name": "Medication Management", "desc": "Expert management of your medications."},
+    {"name": "Psychotherapy", "desc": "Individual, group, and family therapy sessions."},
+    {"name": "Telehealth", "desc": "Secure online therapy sessions."}
+]
+for col, s in zip(services_cols, services):
+    with col:
+        st.markdown(f"<div class='service-card'><h3>{s['name']}</h3><p>{s['desc']}</p></div>", unsafe_allow_html=True)
 
-else:
+# ----------------- STAFF -----------------
+st.markdown("<div class='section'><h2>Meet Our Staff</h2></div>", unsafe_allow_html=True)
+staff_cols = st.columns(3)
+staff = [
+    {"role":"PMHNP-BC","img":"images/marek-studzinski-Q3J1wmn7_8w-unsplash.jpg"},
+    {"role":"Therapist","img":"images/pexels-karolina-grabowska-4226769.jpg"},
+    {"role":"Counselor","img":"images/pexels-shvetsa-3845129.jpg"}
+]
+for col, s in zip(staff_cols, staff):
+    with col:
+        st.markdown(f"<div class='staff-card'><img src='{s['img']}' width='200'><h4>{s['role']}</h4></div>", unsafe_allow_html=True)
+
+# ----------------- CLINIC PLACEHOLDERS -----------------
+st.markdown("<div class='section'><h2>About Our Clinic</h2></div>", unsafe_allow_html=True)
+clinic_cols = st.columns(2)
+for col in clinic_cols:
+    with col:
+        st.markdown("<div class='clinic-card'>Clinic Photo Placeholder</div>", unsafe_allow_html=True)
+
+# ----------------- APPOINTMENT -----------------
+st.markdown("<div class='section'><h2 id='appointment'>Book Appointment</h2></div>", unsafe_allow_html=True)
+if st.session_state.logged_in:
     user = st.session_state.user
-    safe_display_image(user[7], width=100)
-    st.sidebar.write(f"**{user[1]}**")
-    st.sidebar.write(f"Role: {user[4]}")
-    st.sidebar.write(f"Bio: {user[5]}")
-    st.sidebar.write(f"Phone: {user[6]}")
+    with st.form("appointment_form"):
+        patient_name = user[1] if user[4]=="patient" else st.text_input("Patient Name")
+        service = st.selectbox("Select Service", ["Medication Management","Psychotherapy","Telehealth"])
+        date = st.date_input("Select Date")
+        time = st.time_input("Select Time")
+        provider = st.selectbox("Select Provider", ["PMHNP-BC","Therapist","Counselor"])
+        telehealth = st.checkbox("Telehealth Session")
+        submit = st.form_submit_button("Book Appointment")
+        if submit:
+            create_appointment(patient_name, service, date, time, provider, int(telehealth), user[2])
+            st.success(f"Appointment booked for {patient_name} with {provider} on {date} at {time}.")
+else:
+    st.info("Please login to book an appointment.")
 
-    menu_items = ["Dashboard","Profile","Patient Reports","Appointments","Book Appointment","Logout"]
-    page = st.sidebar.selectbox("Menu", menu_items)
+# ----------------- CONTACT -----------------
+st.markdown("<div class='section'><h2 id='contact'>Contact Us</h2></div>", unsafe_allow_html=True)
+st.markdown("**Address:** 123 Wellness Ave, Nairobi, Kenya")
+st.markdown("**Phone:** +254 700 000 000")
+st.markdown("**Email:** info@thrivewellness.com")
 
-    if page == "Logout":
-        st.session_state.logged_in = False
-        st.session_state.user = None
-        st.success("Logged out successfully!")
+with st.form("contact_form"):
+    name = st.text_input("Your Name", key="contact_name")
+    email = st.text_input("Your Email", key="contact_email")
+    message = st.text_area("Your Message", key="contact_message")
+    send = st.form_submit_button("Send Message")
+    if send:
+        st.success("Your message has been sent! We will contact you shortly.")
 
-    elif page == "Profile":
-        st.header("Edit Profile")
-        name = st.text_input("Name", value=user[1], key="profile_name")
-        bio = st.text_area("Bio", value=user[5] if user[5] else "", key="profile_bio")
-        phone = st.text_input("Phone", value=user[6] if user[6] else "", key="profile_phone")
-        avatar_file = st.file_uploader("Upload Avatar", type=["png","jpg","jpeg"], key="profile_avatar")
-        avatar_url = user[7]
-        if avatar_file:
-            avatar_path = f"avatars/{user[1].replace(' ','_')}.png"
-            os.makedirs("avatars", exist_ok=True)
-            with open(avatar_path, "wb") as f:
-                f.write(avatar_file.getbuffer())
-            avatar_url = avatar_path
-        if st.button("Update Profile", key="profile_update_btn"):
-            update_profile(user[0], name, bio, phone, avatar_url)
-            st.session_state.user = get_user(user[2])
-            st.success("Profile updated!")
+# ----------------- SOCIAL MEDIA & NEWSLETTER -----------------
+st.markdown("<div class='section'><h2>Follow Us & Newsletter</h2></div>", unsafe_allow_html=True)
+social_cols = st.columns(4)
+social_links = [
+    {"name": "Facebook", "url": "https://facebook.com"},
+    {"name": "Twitter", "url": "https://twitter.com"},
+    {"name": "Instagram", "url": "https://instagram.com"},
+    {"name": "Subscribe", "url": "#"}
+]
+for col, s in zip(social_cols, social_links):
+    with col:
+        if s['name']=="Subscribe":
+            email_sub = st.text_input("Your Email for Newsletter", key="newsletter_email")
+            if st.button("Subscribe", key="newsletter_btn"):
+                st.success("Subscribed successfully! ✅")
+        else:
+            st.markdown(f"<a href='{s['url']}' target='_blank'>{s['name']}</a>", unsafe_allow_html=True)
 
-    elif page == "Dashboard":
-        st.header("Dashboard")
-        total_users = c.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        total_reports = c.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
-        total_appointments = c.execute("SELECT COUNT(*) FROM appointments").fetchone()[0]
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Users", total_users)
-        col2.metric("Total Reports", total_reports)
-        col3.metric("Total Appointments", total_appointments)
-
-    elif page == "Patient Reports":
-        st.header("Patient Reports")
-        if user[4] in ["Admin","Staff"]:
-            st.subheader("Add Report")
-            patient_name = st.text_input("Patient Name", key="report_patient_name")
-            treatment = st.text_input("Treatment", key="report_treatment")
-            solution = st.text_input("Solution", key="report_solution")
-            if st.button("Create Report", key="create_report_btn"):
-                create_report(patient_name, treatment, solution, user[1], user[7])
-                st.session_state.user = get_user(user[2])
-                st.success("Report added successfully!")
-        st.subheader("All Reports")
-        reports = get_reports()
-        for r in reports:
-            col1, col2 = st.columns([1,5])
-            with col1:
-                safe_display_image(r[4], width=50)
-            with col2:
-                st.markdown(
-                    f"**Patient:** {r[0]}  \n"
-                    f"**Treatment:** {r[1]}  \n"
-                    f"**Solution:** {r[2]}  \n"
-                    f"**By:** {r[3]}  \n"
-                    f"**At:** {r[5]}"
-                )
-            st.markdown("---")
-
-    elif page == "Appointments":
-        st.header("Appointments")
-        appointments = get_appointments()
-        for a in appointments:
-            st.markdown(
-                f"**Patient:** {a[1]} | **Service:** {a[2]} | **Date:** {a[3]} | "
-                f"**Time:** {a[4]} | **Provider:** {a[5]} | **Telehealth:** {a[6]} | "
-                f"**Status:** {a[7]}"
-            )
-
-    elif page == "Book Appointment":
-        st.header("Book Appointment")
-        patient_name = st.text_input("Your Name", key="book_name")
-        service = st.selectbox("Service", ["Medication Management","Psychotherapy"], key="book_service")
-        date = st.date_input("Select Date", key="book_date")
-        time = st.time_input("Select Time", key="book_time")
-        provider = st.selectbox("Provider", ["Cecilia Wamburu PMHNP-BC","John Doe Therapist"], key="book_provider")
-        telehealth = st.checkbox("Telehealth / Online", key="book_telehealth")
-        if st.button("Book", key="book_btn"):
-            create_appointment(patient_name, service, date, time, provider, telehealth, user[1])
-            st.success("Appointment booked successfully! Confirmation sent (simulated)")
+# ----------------- SIDEBAR DASHBOARD -----------------
+if st.session_state.logged_in:
+    st.sidebar.subheader("Dashboard")
+    user = st.session_state.user
+    st.sidebar.text(f"Hello, {user[1]}")
+    if user[5]:
+        try:
+            st.sidebar.image(user[5], width=100)
+        except:
+            st.sidebar.info("Avatar not available")
+    st.sidebar.button("Logout", on_click=lambda: st.session_state.update({"logged_in": False, "user": None}))
+    
+    st.sidebar.subheader("Appointments")
+    appointments = get_appointments(user[2], user[4])
+    if appointments:
+        for appt in appointments:
+            st.sidebar.markdown(f"- {appt[1]} with {appt[5]} on {appt[3]} at {appt[4]} ({appt[7]})")
+    else:
+        st.sidebar.info("No appointments yet.")
