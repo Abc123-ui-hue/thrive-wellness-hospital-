@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3
 from datetime import datetime
 
-# ----------------- DATABASE SETUP -----------------
+# ----------------- DATABASE -----------------
 conn = sqlite3.connect("hospital.db", check_same_thread=False)
 c = conn.cursor()
 
@@ -54,7 +54,7 @@ def register_user(name, email, password, role, avatar_url):
 def create_appointment(patient_name, service, date, time, provider, telehealth, created_by):
     c.execute("""INSERT INTO appointments (patient_name,service,date,time,provider,telehealth,status,created_by)
                  VALUES (?,?,?,?,?,?,?,?)""",
-              (patient_name, service, str(date), str(time), provider, telehealth, "Pending", created_by))
+              (patient_name, service, str(date), str(time), provider, int(telehealth), "Pending", created_by))
     conn.commit()
 
 def get_appointments(user_email, role):
@@ -66,98 +66,122 @@ def get_appointments(user_email, role):
         c.execute("SELECT * FROM appointments WHERE created_by=? ORDER BY date DESC", (user_email,))
     return c.fetchall()
 
-# ----------------- SESSION STATE -----------------
+# ----------------- SESSION -----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user = None
 
+# ----------------- PAGE CONFIG -----------------
+st.set_page_config(page_title="Thrive Wellness Hospital", layout="wide")
+
 # ----------------- STYLES -----------------
 st.markdown("""
 <style>
-@keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
-.hero { background-image: url('images/ai-generated-8722616_1280.jpg'); background-size: cover; background-position: center; height: 450px; display:flex; align-items:center; justify-content:center; }
-.hero-text { animation: fadeIn 2s ease-in-out; color:white; font-size:3rem; font-weight:bold; text-shadow:2px 2px 4px #000; text-align:center; }
-.cta-buttons button { background-color:#4f8ef7; color:white; padding:10px 25px; margin:10px; border-radius:5px; border:none; cursor:pointer; }
-.cta-buttons button:hover { background-color:#3a6fcc; }
-.section { padding:50px; }
-.service-card, .staff-card, .clinic-card { background-color:#f5f5f5; padding:20px; border-radius:10px; text-align:center; margin:10px; transition: transform 0.2s; }
-.service-card:hover, .staff-card:hover, .clinic-card:hover { transform:translateY(-5px); box-shadow:0px 4px 8px rgba(0,0,0,0.2); }
+/* Card styling */
+.card { background-color:#f5f5f5; padding:20px; border-radius:10px; text-align:center; margin:10px; transition: transform 0.2s; }
+.card:hover { transform:translateY(-5px); box-shadow:0px 4px 8px rgba(0,0,0,0.2); }
+/* Hero section */
+.hero { position: relative; text-align: center; color: white; }
+.hero img { width: 100%; height: auto; filter: brightness(0.7); }
+.hero-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.hero-text h1 { font-size: 3em; }
+.hero-text button { font-size: 1.2em; padding: 12px 24px; margin: 10px; border-radius: 8px; border:none; background-color:#007ACC; color:white; cursor:pointer; }
+.hero-text button:hover { background-color:#005f99; }
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- HERO -----------------
-st.markdown("<div class='hero'><div class='hero-text'>Thrive Wellness Hospital</div></div>", unsafe_allow_html=True)
-st.markdown("""
-<div class='cta-buttons'>
-<button onclick="window.scrollTo({top:document.getElementById('appointment').offsetTop, behavior:'smooth'})">Book Appointment</button>
-<button onclick="window.scrollTo({top:document.getElementById('contact').offsetTop, behavior:'smooth'})">Contact Us</button>
-</div>
-""", unsafe_allow_html=True)
+# ----------------- PAGE FUNCTIONS -----------------
+def home_page():
+    st.markdown("""
+    <div class='hero'>
+        <img src='images/ai-generated-8722616_1280.jpg' alt='Clinic Hero'>
+        <div class='hero-text'>
+            <h1>Welcome to Thrive Wellness Hospital</h1>
+            <button onclick="window.location.href='#Appointments'">Book Appointment</button>
+            <button onclick="window.location.href='#Contact'">Contact Us</button>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ----------------- LOGIN / REGISTER -----------------
-st.markdown("<div class='section'><h2>Login / Register</h2></div>", unsafe_allow_html=True)
-login_col, reg_col = st.columns(2)
+def services_page():
+    st.header("Our Services")
+    services = [
+        {"name":"Medication Management","desc":"Expert management of your medications."},
+        {"name":"Psychotherapy","desc":"Individual, group, and family therapy sessions."},
+        {"name":"Telehealth","desc":"Secure online therapy sessions."}
+    ]
+    cols = st.columns(len(services))
+    for col, s in zip(cols, services):
+        with col:
+            st.markdown(f"<div class='card'><h3>{s['name']}</h3><p>{s['desc']}</p></div>", unsafe_allow_html=True)
 
-with login_col:
-    st.subheader("Login")
-    email = st.text_input("Email", key="login_email")
-    password = st.text_input("Password", type="password", key="login_pass")
-    if st.button("Login", key="login_btn"):
-        user = check_user(email, password)
-        if user:
-            st.session_state.logged_in = True
-            st.session_state.user = user
-            st.success("Logged in successfully!")
-        else:
-            st.error("Invalid credentials")
+def staff_page():
+    st.header("Meet Our Staff")
+    staff_list = [
+        {"role":"PMHNP-BC","img":"images/marek-studzinski-Q3J1wmn7_8w-unsplash.jpg"},
+        {"role":"Therapist","img":"images/pexels-karolina-grabowska-4226769.jpg"},
+        {"role":"Counselor","img":"images/pexels-shvetsa-3845129.jpg"}
+    ]
+    cols = st.columns(len(staff_list))
+    for col, s in zip(cols, staff_list):
+        with col:
+            st.image(s["img"], width=150)
+            st.markdown(f"<h4>{s['role']}</h4>", unsafe_allow_html=True)
 
-with reg_col:
-    st.subheader("Register")
-    name = st.text_input("Full Name", key="reg_name")
-    email_r = st.text_input("Email", key="reg_email")
-    password_r = st.text_input("Password", type="password", key="reg_pass")
-    role = st.selectbox("Role", ["patient","staff"], key="reg_role")
-    avatar_url = st.text_input("Avatar URL (optional)", key="avatar_url")
-    if st.button("Register", key="reg_btn"):
-        if register_user(name,email_r,password_r,role,avatar_url):
-            st.success("Registered successfully! Please login.")
-        else:
-            st.error("Registration failed (maybe email exists)")
+def about_page():
+    st.header("About Our Clinic")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("<div class='card'>Clinic Photo Placeholder</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("**Mission:** Provide quality mental health care.\n\n**Vision:** Promote wellness for all.\n\n**Certifications:** TBD", unsafe_allow_html=True)
 
-# ----------------- SERVICES -----------------
-st.markdown("<div class='section'><h2>Our Services</h2></div>", unsafe_allow_html=True)
-services_cols = st.columns(3)
-services = [
-    {"name": "Medication Management", "desc": "Expert management of your medications."},
-    {"name": "Psychotherapy", "desc": "Individual, group, and family therapy sessions."},
-    {"name": "Telehealth", "desc": "Secure online therapy sessions."}
-]
-for col, s in zip(services_cols, services):
-    with col:
-        st.markdown(f"<div class='service-card'><h3>{s['name']}</h3><p>{s['desc']}</p></div>", unsafe_allow_html=True)
+def contact_page():
+    st.header("Contact Us")
+    st.markdown("**Address:** 123 Wellness Ave, Nairobi, Kenya")
+    st.markdown("**Phone:** +254 700 000 000")
+    st.markdown("**Email:** info@thrivewellness.com")
+    with st.form("contact_form"):
+        name = st.text_input("Your Name")
+        email = st.text_input("Your Email")
+        message = st.text_area("Your Message")
+        submit = st.form_submit_button("Send Message")
+        if submit:
+            st.success("Message sent!")
 
-# ----------------- STAFF -----------------
-st.markdown("<div class='section'><h2>Meet Our Staff</h2></div>", unsafe_allow_html=True)
-staff_cols = st.columns(3)
-staff = [
-    {"role":"PMHNP-BC","img":"images/marek-studzinski-Q3J1wmn7_8w-unsplash.jpg"},
-    {"role":"Therapist","img":"images/pexels-karolina-grabowska-4226769.jpg"},
-    {"role":"Counselor","img":"images/pexels-shvetsa-3845129.jpg"}
-]
-for col, s in zip(staff_cols, staff):
-    with col:
-        st.markdown(f"<div class='staff-card'><img src='{s['img']}' width='200'><h4>{s['role']}</h4></div>", unsafe_allow_html=True)
+def login_register_page():
+    st.header("Login / Register")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Login")
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_pass")
+        if st.button("Login", key="login_btn"):
+            user = check_user(email, password)
+            if user:
+                st.session_state.logged_in = True
+                st.session_state.user = user
+                st.success("Logged in successfully!")
+            else:
+                st.error("Invalid credentials")
+    with col2:
+        st.subheader("Register")
+        name = st.text_input("Full Name", key="reg_name")
+        email_r = st.text_input("Email", key="reg_email")
+        password_r = st.text_input("Password", type="password", key="reg_pass")
+        role = st.selectbox("Role", ["patient","staff"], key="reg_role")
+        avatar_url = st.text_input("Avatar URL (optional)", key="avatar_url")
+        if st.button("Register", key="reg_btn"):
+            if register_user(name,email_r,password_r,role,avatar_url):
+                st.success("Registered successfully! Please login.")
+            else:
+                st.error("Registration failed (maybe email exists)")
 
-# ----------------- CLINIC PLACEHOLDERS -----------------
-st.markdown("<div class='section'><h2>About Our Clinic</h2></div>", unsafe_allow_html=True)
-clinic_cols = st.columns(2)
-for col in clinic_cols:
-    with col:
-        st.markdown("<div class='clinic-card'>Clinic Photo Placeholder</div>", unsafe_allow_html=True)
-
-# ----------------- APPOINTMENT -----------------
-st.markdown("<div class='section'><h2 id='appointment'>Book Appointment</h2></div>", unsafe_allow_html=True)
-if st.session_state.logged_in:
+def appointments_page():
+    st.header("Appointments / Booking")
+    if not st.session_state.logged_in:
+        st.info("Please login to book appointments.")
+        return
     user = st.session_state.user
     with st.form("appointment_form"):
         patient_name = user[1] if user[4]=="patient" else st.text_input("Patient Name")
@@ -168,59 +192,50 @@ if st.session_state.logged_in:
         telehealth = st.checkbox("Telehealth Session")
         submit = st.form_submit_button("Book Appointment")
         if submit:
-            create_appointment(patient_name, service, date, time, provider, int(telehealth), user[2])
+            create_appointment(patient_name, service, date, time, provider, telehealth, user[2])
             st.success(f"Appointment booked for {patient_name} with {provider} on {date} at {time}.")
-else:
-    st.info("Please login to book an appointment.")
 
-# ----------------- CONTACT -----------------
-st.markdown("<div class='section'><h2 id='contact'>Contact Us</h2></div>", unsafe_allow_html=True)
-st.markdown("**Address:** 123 Wellness Ave, Nairobi, Kenya")
-st.markdown("**Phone:** +254 700 000 000")
-st.markdown("**Email:** info@thrivewellness.com")
-
-with st.form("contact_form"):
-    name = st.text_input("Your Name", key="contact_name")
-    email = st.text_input("Your Email", key="contact_email")
-    message = st.text_area("Your Message", key="contact_message")
-    send = st.form_submit_button("Send Message")
-    if send:
-        st.success("Your message has been sent! We will contact you shortly.")
-
-# ----------------- SOCIAL MEDIA & NEWSLETTER -----------------
-st.markdown("<div class='section'><h2>Follow Us & Newsletter</h2></div>", unsafe_allow_html=True)
-social_cols = st.columns(4)
-social_links = [
-    {"name": "Facebook", "url": "https://facebook.com"},
-    {"name": "Twitter", "url": "https://twitter.com"},
-    {"name": "Instagram", "url": "https://instagram.com"},
-    {"name": "Subscribe", "url": "#"}
-]
-for col, s in zip(social_cols, social_links):
-    with col:
-        if s['name']=="Subscribe":
-            email_sub = st.text_input("Your Email for Newsletter", key="newsletter_email")
-            if st.button("Subscribe", key="newsletter_btn"):
-                st.success("Subscribed successfully! ✅")
-        else:
-            st.markdown(f"<a href='{s['url']}' target='_blank'>{s['name']}</a>", unsafe_allow_html=True)
-
-# ----------------- SIDEBAR DASHBOARD -----------------
-if st.session_state.logged_in:
-    st.sidebar.subheader("Dashboard")
+def dashboard_page():
+    st.header("Dashboard")
     user = st.session_state.user
-    st.sidebar.text(f"Hello, {user[1]}")
+    st.text(f"Hello, {user[1]}")
     if user[5]:
         try:
-            st.sidebar.image(user[5], width=100)
+            st.image(user[5], width=100)
         except:
-            st.sidebar.info("Avatar not available")
-    st.sidebar.button("Logout", on_click=lambda: st.session_state.update({"logged_in": False, "user": None}))
-    
-    st.sidebar.subheader("Appointments")
+            st.info("Avatar not available")
+    st.subheader("Appointments")
     appointments = get_appointments(user[2], user[4])
     if appointments:
         for appt in appointments:
-            st.sidebar.markdown(f"- {appt[1]} with {appt[5]} on {appt[3]} at {appt[4]} ({appt[7]})")
+            st.markdown(f"- {appt[1]} with {appt[5]} on {appt[3]} at {appt[4]} ({appt[7]})")
     else:
-        st.sidebar.info("No appointments yet.")
+        st.info("No appointments yet.")
+    if st.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.user = None
+        st.experimental_rerun()
+
+# ----------------- NAVIGATION -----------------
+pages = ["Home","Services","Staff","Appointments","About","Contact","Login/Register"]
+if st.session_state.logged_in:
+    pages.append("Dashboard")
+
+page = st.sidebar.selectbox("Navigate", pages)
+
+if page=="Home":
+    home_page()
+elif page=="Services":
+    services_page()
+elif page=="Staff":
+    staff_page()
+elif page=="About":
+    about_page()
+elif page=="Contact":
+    contact_page()
+elif page=="Login/Register":
+    login_register_page()
+elif page=="Appointments":
+    appointments_page()
+elif page=="Dashboard":
+    dashboard_page()
